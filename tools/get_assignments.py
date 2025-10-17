@@ -194,37 +194,33 @@ def main():
         return None
 
 def embed_data_in_html(data):
-    """Embeds assignment data into index.html as a global variable."""
+    """Generates index.html from template with embedded assignment data."""
     try:
-        html_path = 'index.html'
-        log_to_file(f"Embedding data into {html_path}...")
+        template_path = 'index.html.template'
+        output_path = 'index.html'
+        log_to_file(f"Generating {output_path} from {template_path}...")
 
-        with open(html_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        # Read the template
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template_content = f.read()
 
-        # Create the script tag with the data
+        # Create the JSON data string
         # Use json.dumps with ensure_ascii=False to handle unicode characters directly,
         # and escape HTML-sensitive characters to prevent XSS vulnerabilities.
         json_data_string = json.dumps(data, ensure_ascii=False)
-        script_tag = f'<script id="assignment-data">window.assignment_data = {json_data_string};</script>'
-
-        # Find if the script tag already exists and replace it, otherwise append before </body>
-        import re
-        if re.search(r'<script id="assignment-data">.*?</script>', content, re.DOTALL):
-            content = re.sub(r'<script id="assignment-data">.*?</script>', lambda m: script_tag, content, flags=re.DOTALL)
-            log_to_file("Replaced existing embedded data in index.html.")
-        else:
-            content = content.replace('</body>', f'{script_tag}\n</body>')
-            log_to_file("Added embedded data to index.html.")
-
-        with open(html_path, 'w', encoding='utf-8') as f:
-            f.write(content)
         
-        log_to_file("Successfully embedded data in index.html.")
+        # Replace the placeholder with actual data
+        final_content = template_content.replace('{{ASSIGNMENT_DATA}}', json_data_string)
+
+        # Write the final HTML file
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(final_content)
+        
+        log_to_file(f"Successfully generated {output_path} from template.")
         return True
 
     except Exception as e:
-        log_to_file(f"Failed to embed data in index.html: {e}", 'ERROR')
+        log_to_file(f"Failed to generate index.html from template: {e}", 'ERROR')
         return False
 
 if __name__ == '__main__':

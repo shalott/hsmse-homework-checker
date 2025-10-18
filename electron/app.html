@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HSMSE Homework Checker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-container">
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <header class="app-title">HSMSE Homework Checker</header>
+
+        <!-- Main Controls -->
+        <section class="account-section">
+          <h2 class="account-title">Controls</h2>
+          <div class="account-controls">
+            <button id="start-auth-flow" class="btn btn-primary">Start</button>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Main Content Area -->
+      <main class="main-content">
+        <!-- Instructions Panel -->
+        <section id="instructions-panel" class="instructions-panel">
+          <h3 class="instructions-title">Instructions</h3>
+          <p>
+            1. Authenticate with your school accounts using the buttons in the
+            sidebar
+          </p>
+          <p>
+            2. Once authenticated, click "Load Assignments" to fetch your
+            homework
+          </p>
+          <p>
+            3. Use the browser tab to interact with Google Classroom directly
+          </p>
+        </section>
+
+        <!-- Tab Navigation -->
+        <nav class="tab-nav">
+          <button id="browser-tab" class="tab-button active">Browser</button>
+          <button id="logs-tab" class="tab-button">Logs</button>
+        </nav>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+          <!-- Browser Tab -->
+          <div id="browser-pane" class="tab-pane active">
+            <div class="browser-content">
+              <!-- BrowserView will be positioned here by Electron -->
+            </div>
+          </div>
+
+          <!-- Logs Tab -->
+          <div id="logs-pane" class="tab-pane">
+            <div class="logs-content">
+              <div id="log-container" class="log-container">
+                <!-- Log entries will be added here dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-item url-display">
+        <span>URL:</span>
+        <span id="status-url">No page loaded</span>
+      </div>
+      <div class="status-item">
+        <span>HSMSE Homework Checker v1.0</span>
+      </div>
+    </footer>
+
+    <!-- Application JavaScript -->
+    <script src="app.js"></script>
+  </body>
+</html>

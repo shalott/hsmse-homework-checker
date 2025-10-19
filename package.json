@@ -1,0 +1,105 @@
+{
+  "name": "homework_checker",
+  "version": "1.0.0",
+  "description": "Desktop application for scraping homework assignments from Google Classroom and Jupiter Ed",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "postinstall": "electron-builder install-app-deps",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "dist": "electron-builder --publish=never",
+    "pack": "electron-builder --dir",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "homework",
+    "scraper",
+    "google-classroom",
+    "jupiter-ed",
+    "electron",
+    "desktop-app"
+  ],
+  "author": "Naomi Novik",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^38.3.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.naominovik.homework-checker",
+    "productName": "Homework Checker",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "data/**/*",
+      "*.html.template",
+      "test_config.json",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/puppeteer/.local-chromium",
+        "to": "chromium",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.icns"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "fs-extra": "^11.3.2",
+    "puppeteer": "^24.25.0"
+  }
+}

@@ -2,61 +2,20 @@ const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// Import utilities
+const { initializeLogger, logToRenderer } = require('./core/logger');
+const {
+  GOOGLE_CLASSROOM_URL_BASE,
+  GOOGLE_CLASSROOM_ASSIGNMENTS_PATH,
+  JUPITER_SECRET_PATH,
+  BROWSER_VIEW_BOUNDS
+} = require('./config/constants');
+
 // Keep a global reference of the window object
 let mainWindow;
 let browserView;
 
-// Account configurations
-const GOOGLE_CLASSROOM_URL_BASE = 'https://classroom.google.com/u/';
-const GOOGLE_CLASSROOM_ASSIGNMENTS_PATH = '/a/not-turned-in/all';
 
-const JUPITER_SECRET_PATH = path.join(app.getPath('userData'), 'secrets', 'jupiter_secret.json');
-
-// Logging function
-function logToRenderer(message, type = 'info') {
-  // For instructions or success messages, send to a dedicated channel
-  if (type === 'instruction' || type === 'success') {
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-      try {
-        mainWindow.webContents.send('instruction-message', { message });
-      } catch (error) {
-        console.log(`[ERROR] Failed to send instruction to renderer: ${error.message}`);
-      }
-    }
-    // Also log success messages to the console/log tab for a complete record
-    if (type === 'success') {
-       console.log(`[SUCCESS] ${message}`);
-       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-          try {
-            mainWindow.webContents.send('log-message', { 
-              message, 
-              type, 
-              timestamp: new Date().toLocaleTimeString() 
-            });
-          } catch (error) {
-            console.log(`[ERROR] Failed to send log to renderer: ${error.message}`);
-          }
-       }
-    }
-    return;
-  }
-
-  // For all other log types, log to console and send to the 'log-message' channel
-  console.log(`[${type.toUpperCase()}] ${message}`);
-  
-  // Check if the window and its contents are still valid before sending a message
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
-    try {
-      mainWindow.webContents.send('log-message', { 
-        message, 
-        type, 
-        timestamp: new Date().toLocaleTimeString() 
-      });
-    } catch (error) {
-      console.log(`[ERROR] Failed to send log to renderer: ${error.message}`);
-    }
-  }
-}
 
 function createWindow() {
   // Create the browser window
@@ -73,7 +32,10 @@ function createWindow() {
   logToRenderer('Main window created', 'info');
 
   // Load the app
-  mainWindow.loadFile(path.join(__dirname, 'app.html'));
+  mainWindow.loadFile(path.join(__dirname, 'main.html'));
+
+  // Initialize logger with main window
+  initializeLogger(mainWindow);
 
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
@@ -135,13 +97,13 @@ function createBrowserView() {
     // Position the BrowserView for the new tabbed layout
     const { width, height } = mainWindow.getBounds();
     browserView.setBounds({ 
-      x: 280,  // Start after 280px sidebar
-      y: 90,   // Below instructions panel (40px) + tabs (50px)
-      width: width - 300,  // Full width minus sidebar and padding
-      height: height - 160  // Full height minus instructions, tabs, and status bar (30px)
+      x: BROWSER_VIEW_BOUNDS.x,
+      y: BROWSER_VIEW_BOUNDS.y,
+      width: width - BROWSER_VIEW_BOUNDS.widthOffset,
+      height: height - BROWSER_VIEW_BOUNDS.heightOffset
     });
     
-    logToRenderer(`BrowserView positioned at x:280, y:90, size:${width - 300}x${height - 160}`, 'info');
+    logToRenderer(`BrowserView positioned at x:${BROWSER_VIEW_BOUNDS.x}, y:${BROWSER_VIEW_BOUNDS.y}, size:${width - BROWSER_VIEW_BOUNDS.widthOffset}x${height - BROWSER_VIEW_BOUNDS.heightOffset}`, 'info');
     
     // Prevent new windows from opening - force all navigation to stay in the same view
     browserView.webContents.setWindowOpenHandler(({ url }) => {
@@ -180,12 +142,12 @@ function createBrowserView() {
       if (browserView) {
         const { width, height } = mainWindow.getBounds();
         browserView.setBounds({ 
-          x: 280,  // Start after 280px sidebar
-          y: 90,   // Below instructions panel + tabs
-          width: width - 300,  // Full width minus sidebar and padding
-          height: height - 160  // Full height minus instructions, tabs, and status bar (30px)
+          x: BROWSER_VIEW_BOUNDS.x,
+          y: BROWSER_VIEW_BOUNDS.y,
+          width: width - BROWSER_VIEW_BOUNDS.widthOffset,
+          height: height - BROWSER_VIEW_BOUNDS.heightOffset
         });
-        logToRenderer(`BrowserView resized to ${width - 300}x${height - 160}`, 'info');
+        logToRenderer(`BrowserView resized to ${width - BROWSER_VIEW_BOUNDS.widthOffset}x${height - BROWSER_VIEW_BOUNDS.heightOffset}`, 'info');
       }
     });
     

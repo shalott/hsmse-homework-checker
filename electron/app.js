@@ -24,7 +24,13 @@ function initializeApp() {
     logsTab: document.getElementById('logs-tab'),
     browserPane: document.getElementById('browser-pane'),
     logsPane: document.getElementById('logs-pane'),
+    jupiterLoginPane: document.getElementById('jupiter-login-pane'),
     
+    // Jupiter Form
+    jupiterForm: document.getElementById('jupiter-form'),
+    jupiterStudentName: document.getElementById('jupiter-student-name'),
+    jupiterPassword: document.getElementById('jupiter-password'),
+
     // Status and logs
     instructionsPanel: document.getElementById('instructions-panel'),
     logContainer: document.getElementById('log-container'),
@@ -49,6 +55,9 @@ function setupEventListeners() {
   elements.browserTab.addEventListener('click', () => switchTab('browser'));
   elements.logsTab.addEventListener('click', () => switchTab('logs'));
   
+  // Jupiter form submission
+  elements.jupiterForm.addEventListener('submit', handleJupiterFormSubmit);
+
   // IPC listeners
   setupIpcListeners();
 }
@@ -68,6 +77,11 @@ function setupIpcListeners() {
   // Listen for instruction messages
   ipcRenderer.on('instruction-message', (event, data) => {
     updateInstructions(data.message);
+  });
+
+  // Listen for request to show Jupiter login
+  ipcRenderer.on('show-jupiter-login', () => {
+    showJupiterLoginForm();
   });
 }
 
@@ -108,6 +122,36 @@ function switchTab(tabName) {
   
   // Notify main process about tab switch
   ipcRenderer.send('switch-tab', tabName);
+}
+
+// Show the Jupiter login form
+function showJupiterLoginForm() {
+  // Switch to a view that shows the form
+  document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+  elements.jupiterLoginPane.classList.add('active');
+  // Also hide the browser view from the main process
+  ipcRenderer.send('switch-tab', 'jupiter-login');
+}
+
+// Handle Jupiter form submission
+function handleJupiterFormSubmit(event) {
+  event.preventDefault();
+  const studentName = elements.jupiterStudentName.value;
+  const password = elements.jupiterPassword.value;
+  const loginType = document.querySelector('input[name="login-type"]:checked').value;
+
+  if (studentName && password) {
+    addLogEntry('Sending Jupiter credentials to main process...', 'info');
+    ipcRenderer.invoke('save-jupiter-credentials', { 
+      student_name: studentName, 
+      password,
+      loginType
+    });
+    // Hide the form and switch back to the browser view
+    switchTab('browser');
+  } else {
+    addLogEntry('Student Name and password are required.', 'error');
+  }
 }
 
 // Update the instructions panel

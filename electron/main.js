@@ -7,18 +7,10 @@ let mainWindow;
 let browserView;
 
 // Account configurations
-const ACCOUNTS = {
-  nycstudents: {
-    name: 'NYC Students',
-    assignedUrl: 'https://classroom.google.com/u/0/a/not-turned-in/all',
-    expectedDomain: 'nycstudents.net'
-  },
-  hsmse: {
-    name: 'HSMSE',
-    assignedUrl: 'https://classroom.google.com/u/1/a/not-turned-in/all',
-    expectedDomain: 'hsmse.org'
-  }
-};
+const GOOGLE_CLASSROOM_URL_BASE = 'https://classroom.google.com/u/';
+const GOOGLE_CLASSROOM_ASSIGNMENTS_PATH = '/a/not-turned-in/all';
+
+const JUPITER_SECRET_PATH = path.join(app.getPath('userData'), 'secrets', 'jupiter_secret.json');
 
 // Logging function
 function logToRenderer(message, type = 'info') {
@@ -212,56 +204,228 @@ ipcMain.handle('start-unified-auth', async () => {
   createBrowserView();
 
   try {
-    const hsmseUrl = ACCOUNTS.hsmse.assignedUrl;
-    const nycstudentsUrl = ACCOUNTS.nycstudents.assignedUrl;
+    const account0Url = `${GOOGLE_CLASSROOM_URL_BASE}0${GOOGLE_CLASSROOM_ASSIGNMENTS_PATH}`;
+    const account1Url = `${GOOGLE_CLASSROOM_URL_BASE}1${GOOGLE_CLASSROOM_ASSIGNMENTS_PATH}`;
 
-    // 1. Attempt to navigate to the HSMSE assignments page
-    logToRenderer(`Attempting to access HSMSE assignments at ${hsmseUrl}`, 'info');
-    await browserView.webContents.loadURL(hsmseUrl);
-
-    // Wait for any redirects to settle
+    // First, check if we are logged into Google at all.
+    await browserView.webContents.loadURL('https://classroom.google.com/');
     await new Promise(resolve => setTimeout(resolve, 3000));
-    const finalUrl = browserView.webContents.getURL();
-    logToRenderer(`Current URL after attempting HSMSE: ${finalUrl}`, 'info');
+    const initialUrl = browserView.webContents.getURL();
 
-    // 2. Analyze the result
-    if (finalUrl.startsWith('https://accounts.google.com/')) {
-      // Case A: Not logged in at all.
+    if (initialUrl.startsWith('https://accounts.google.com/')) {
       logToRenderer('Please log in to both of your Google Classroom accounts', 'instruction');
       return { success: false, reason: 'login_required' };
     }
 
-    if (finalUrl.startsWith('https://classroom.google.com/u/0/')) {
-      // Case B: Logged in, but it redirected to the wrong account (u/0 instead of u/1)
+    // Now check each account
+    logToRenderer('Checking for first Google account...', 'info');
+    await browserView.webContents.loadURL(account0Url);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    const account0Success = browserView.webContents.getURL().startsWith(account0Url);
+
+    logToRenderer('Checking for second Google account...', 'info');
+    await browserView.webContents.loadURL(account1Url);
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    const account1Success = browserView.webContents.getURL().startsWith(account1Url);
+
+    if (account0Success && account1Success) {
+      logToRenderer('All Google accounts are authenticated.', 'success');
+      return await handleJupiterLogin();
+    } else if (account0Success || account1Success) {
       logToRenderer('Please log in to your second Google Classroom account', 'instruction');
-      return { success: false, reason: 'wrong_account' };
+      return { success: false, reason: 'one_account_missing' };
+    } else {
+      // This case should be rare if the initial check passed, but is a good fallback.
+      logToRenderer('Please log in to both of your Google Classroom accounts', 'instruction');
+      return { success: false, reason: 'both_accounts_missing' };
     }
-
-    if (finalUrl.startsWith(hsmseUrl)) {
-      // Case C: Successfully accessed HSMSE assignments.
-      logToRenderer('Successfully accessed first account. Now checking for second account...', 'info');
-
-      // Now, let's try to load the NYCStudents assignments
-      await browserView.webContents.loadURL(nycstudentsUrl);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      const finalNycUrl = browserView.webContents.getURL();
-      logToRenderer(`Current URL after attempting NYCStudents: ${finalNycUrl}`, 'info');
-
-      if (finalNycUrl.startsWith(nycstudentsUrl)) {
-        logToRenderer('All accounts are authenticated. You can now load assignments.', 'success');
-        return { success: true };
-      } else {
-        logToRenderer('Please log in to your second Google Classroom account', 'instruction');
-        return { success: false, reason: 'nyc_student_fail' };
-      }
-    }
-
-    // Default fallback case
-    logToRenderer('An unknown error occurred during authentication. Please check your login status manually in the browser view.', 'error');
-    return { success: false, reason: 'unknown' };
 
   } catch (error) {
     logToRenderer(`An error occurred during the authentication flow: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+async function handleJupiterLogin() {
+  logToRenderer('Checking for Jupiter Ed credentials...', 'info');
+  try {
+    // Check if the secret file exists
+    await fs.promises.access(JUPITER_SECRET_PATH);
+    const credentials = JSON.parse(await fs.promises.readFile(JUPITER_SECRET_PATH, 'utf8'));
+    logToRenderer('Jupiter Ed credentials found: Logging in...', 'info');
+    return await loginToJupiter(credentials);
+  } catch (error) {
+    // If the file doesn't exist or is unreadable
+    logToRenderer('Jupiter Ed credentials not found.', 'instruction');
+    logToRenderer('Please enter your Jupiter Ed username and password.', 'instruction');
+    // Ask the renderer to show the login form
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('show-jupiter-login');
+    }
+    return { success: false, reason: 'jupiter_credentials_required' };
+  }
+}
+
+async function loginToJupiter(credentials) {
+  const JUPITER_LOGIN_URL = 'https://login.jupitered.com/login/index.php?89583';
+  logToRenderer('--- Starting Jupiter Login ---', 'info');
+  logToRenderer(`Received credentials object: ${JSON.stringify(credentials)}`, 'info');
+
+  try {
+    await browserView.webContents.loadURL(JUPITER_LOGIN_URL);
+    
+    // This code is working -- DO NOT CHANGE IT
+    browserView.webContents.once('did-finish-load', async () => {
+      try {
+        const loginType = credentials.loginType || 'student';
+        const tabId = loginType === 'parent' ? 'tab_parent' : 'tab_student';
+
+        const simulateClickScript = `
+          new Promise((resolve) => {
+            const el = document.getElementById('${tabId}');
+            if (el) {
+              const elHtml = el.outerHTML;
+              
+              // Simulate a more realistic click
+              const mouseoverEvent = new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window });
+              const mousedownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+              const mouseupEvent = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
+              
+              el.dispatchEvent(mouseoverEvent);
+              el.dispatchEvent(mousedownEvent);
+              el.dispatchEvent(mouseupEvent);
+              
+              resolve({ success: true, clicked: '${tabId}', found: true, elementHTML: elHtml.substring(0, 100) });
+            } else {
+              resolve({ success: false, error: 'Element not found by getElementById', selector: '${tabId}', found: false });
+            }
+          });
+        `;
+
+        const clickResult = await browserView.webContents.executeJavaScript(simulateClickScript);
+
+      } catch (execError) {
+        logToRenderer(`Error during JS execution for tab click: ${execError.message}`, 'error');
+      }
+
+      // Now it's time to try entering the student name and password
+      logToRenderer('Tab click completed. Now attempting to enter credentials...', 'info');
+      
+      try {
+        // Wait a moment for the tab to switch
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Enter the student name in the contenteditable div
+        logToRenderer('Entering student name...', 'info');
+        const studentNameResult = await browserView.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            const studentDiv = document.getElementById('text_studid1');
+            const hiddenInput = document.querySelector('input[name="studid1"]');
+            
+            if (studentDiv) {
+              studentDiv.textContent = '${credentials.student_name}';
+              if (hiddenInput) {
+                hiddenInput.value = '${credentials.student_name}';
+              }
+              // Hide the placeholder
+              const placeholder = document.getElementById('ph_studid1');
+              if (placeholder) placeholder.style.display = 'none';
+              
+              resolve({ success: true, field: 'student_name', value: '${credentials.student_name}' });
+            } else {
+              resolve({ success: false, error: 'Student name field not found' });
+            }
+          });
+        `);
+        
+        logToRenderer(`Student name entry result: ${JSON.stringify(studentNameResult)}`, studentNameResult.success ? 'info' : 'error');
+        
+        // Enter the password
+        logToRenderer('Entering password...', 'info');
+        const passwordResult = await browserView.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            const passwordField = document.getElementById('text_password1');
+            
+            if (passwordField) {
+              passwordField.value = '${credentials.password}';
+              resolve({ success: true, field: 'password' });
+            } else {
+              resolve({ success: false, error: 'Password field not found' });
+            }
+          });
+        `);
+        
+        logToRenderer(`Password entry result: ${JSON.stringify(passwordResult)}`, passwordResult.success ? 'info' : 'error');
+        
+        // Click the login button with mouse simulation
+        logToRenderer('Simulating click on login button...', 'info');
+        const loginButtonResult = await browserView.webContents.executeJavaScript(`
+          new Promise((resolve) => {
+            const loginBtn = document.getElementById('loginbtn');
+            
+            if (loginBtn) {
+              // Simulate realistic mouse events like we did for the tab
+              const mouseoverEvent = new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window });
+              const mousedownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+              const mouseupEvent = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
+              const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+              
+              loginBtn.dispatchEvent(mouseoverEvent);
+              loginBtn.dispatchEvent(mousedownEvent);
+              loginBtn.dispatchEvent(mouseupEvent);
+              loginBtn.dispatchEvent(clickEvent);
+              
+              resolve({ success: true, action: 'login_button_clicked_with_simulation' });
+            } else {
+              resolve({ success: false, error: 'Login button not found' });
+            }
+          });
+        `);
+        
+        logToRenderer(`Login button click result: ${JSON.stringify(loginButtonResult)}`, loginButtonResult.success ? 'success' : 'error');
+        
+        if (loginButtonResult.success) {
+          logToRenderer('Login form submitted. Waiting for redirect...', 'info');
+          // Wait for potential redirect
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          const finalUrl = browserView.webContents.getURL();
+          if (finalUrl.includes('student.php') || finalUrl.includes('grades.php')) {
+            logToRenderer('Jupiter Ed login successful!', 'success');
+          } else {
+            logToRenderer(`Login may have failed. Current URL: ${finalUrl}`, 'error');
+          }
+        }
+        
+      } catch (credentialError) {
+        logToRenderer(`Error during credential entry: ${credentialError.message}`, 'error');
+      }
+
+    });
+    
+    return { success: true };
+
+  } catch (error) {
+    logToRenderer(`A critical error occurred during Jupiter login: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+}
+
+ipcMain.handle('save-jupiter-credentials', async (event, { student_name, password, loginType }) => {
+  logToRenderer('Received Jupiter credentials. Saving...', 'info');
+  try {
+    const secretsDir = path.dirname(JUPITER_SECRET_PATH);
+    // Create the secrets directory if it doesn't exist
+    await fs.promises.mkdir(secretsDir, { recursive: true });
+    // Save the credentials to the file
+    await fs.promises.writeFile(JUPITER_SECRET_PATH, JSON.stringify({ student_name, password, loginType }), 'utf8');
+    logToRenderer('Jupiter credentials saved successfully.', 'success');
+
+    // Now that credentials are saved, try logging in again
+    logToRenderer('Attempting to log in to Jupiter Ed...', 'info');
+    return await loginToJupiter({ student_name, password, loginType });
+  } catch (error) {
+    logToRenderer(`Failed to save Jupiter credentials: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });
@@ -273,8 +437,8 @@ ipcMain.on('switch-tab', (event, tabName) => {
       mainWindow.setBrowserView(browserView);
       browserView.webContents.focus();
     }
-  } else if (tabName === 'logs') {
-    // Hide browser view when logs tab is active
+  } else if (tabName === 'logs' || tabName === 'jupiter-login') {
+    // Hide browser view when logs or jupiter form is active
     if (browserView) {
       mainWindow.setBrowserView(null);
     }

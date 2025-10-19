@@ -54,6 +54,48 @@
             </div>
           </div>
 
+          <!-- Jupiter Login Form (Initially Hidden) -->
+          <div id="jupiter-login-pane" class="tab-pane">
+            <div class="jupiter-login-container">
+              <h3>Jupiter Ed Login</h3>
+              <p>
+                Please enter your Jupiter Ed credentials. They will be stored
+                securely on your local machine.
+              </p>
+              <form id="jupiter-form">
+                <div class="form-group">
+                  <label for="jupiter-student-name">Student Name</label>
+                  <input type="text" id="jupiter-student-name" required />
+                </div>
+                <div class="form-group">
+                  <label for="jupiter-password">Password</label>
+                  <input type="password" id="jupiter-password" required />
+                </div>
+                <div class="form-group-inline">
+                  <label>Login Type:</label>
+                  <div class="radio-group">
+                    <input
+                      type="radio"
+                      id="login-student"
+                      name="login-type"
+                      value="student"
+                      checked />
+                    <label for="login-student">Student</label>
+                    <input
+                      type="radio"
+                      id="login-parent"
+                      name="login-type"
+                      value="parent" />
+                    <label for="login-parent">Parent</label>
+                  </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                  Save and Login
+                </button>
+              </form>
+            </div>
+          </div>
+
           <!-- Logs Tab -->
           <div id="logs-pane" class="tab-pane">
             <div class="logs-content">

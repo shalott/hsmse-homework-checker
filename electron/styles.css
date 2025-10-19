@@ -96,15 +96,6 @@ body {
   background-color: #7f8c8d;
 }
 
-.btn-danger {
-  background-color: #e74c3c;
-  color: white;
-}
-
-.btn-danger:hover {
-  background-color: #c0392b;
-}
-
 .btn:disabled {
   background-color: #7f8c8d;
   cursor: not-allowed;
@@ -365,6 +356,81 @@ body {
     "Courier New", monospace;
   font-size: 11px;
   color: #495057;
+}
+
+/* Jupiter Login Form Styles */
+.jupiter-login-container {
+  padding: 40px;
+  max-width: 500px;
+  margin: 40px auto;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.jupiter-login-container h3 {
+  text-align: center;
+  margin-bottom: 15px;
+  font-size: 22px;
+  color: #333;
+}
+
+.jupiter-login-container p {
+  text-align: center;
+  margin-bottom: 30px;
+  color: #666;
+}
+
+#jupiter-form .form-group {
+  margin-bottom: 20px;
+}
+
+#jupiter-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #555;
+}
+
+#jupiter-form input[type="text"],
+#jupiter-form input[type="password"] {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+#jupiter-form .form-group-inline {
+  display: flex;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+#jupiter-form .form-group-inline label {
+  margin-bottom: 0;
+  margin-right: 20px;
+}
+
+#jupiter-form .radio-group {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+#jupiter-form .radio-group input[type="radio"] {
+  margin-right: 5px;
+}
+
+#jupiter-form .radio-group label {
+  margin-bottom: 0;
+  font-weight: 500;
+}
+
+#jupiter-form button[type="submit"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
 }
 
 /* Responsive design */

@@ -1,7 +1,31 @@
 // Centralized logging utilities for HSMSE Homework Checker
 
+const fs = require('fs');
+const path = require('path');
+
 let mainWindow = null;
 let logsWindow = null;
+
+// Ensure logs directory exists
+const LOGS_DIR = path.join(__dirname, '..', 'data', 'temp');
+const LOG_FILE = path.join(LOGS_DIR, 'app.log');
+
+// Create logs directory if it doesn't exist
+try {
+  fs.mkdirSync(LOGS_DIR, { recursive: true });
+} catch (error) {
+  console.error('Failed to create logs directory:', error);
+}
+
+// Helper function to write to log file
+function writeToLogFile(message, type, timestamp) {
+  try {
+    const logEntry = `[${timestamp}] [${type.toUpperCase()}] ${message}\n`;
+    fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
+  } catch (error) {
+    console.error('Failed to write to log file:', error);
+  }
+}
 
 // Initialize the logger with the main window reference
 function initializeLogger(window) {
@@ -15,6 +39,11 @@ function setLogsWindow(window) {
 
 // Main logging function
 function logToRenderer(message, type = 'info') {
+  const timestamp = new Date().toLocaleTimeString();
+  
+  // Always write to log file first
+  writeToLogFile(message, type, timestamp);
+  
   // For instructions or success messages, send to a dedicated channel
   if (type === 'instruction' || type === 'success') {
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
@@ -27,7 +56,7 @@ function logToRenderer(message, type = 'info') {
     // Also log success messages to the console/log tab for a complete record
     if (type === 'success') {
        console.log(`[SUCCESS] ${message}`);
-       const logData = { message, type, timestamp: new Date().toLocaleTimeString() };
+       const logData = { message, type, timestamp };
        
        // Send to main window
        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
@@ -56,7 +85,7 @@ function logToRenderer(message, type = 'info') {
   const logData = { 
     message, 
     type, 
-    timestamp: new Date().toLocaleTimeString() 
+    timestamp 
   };
   
   // Send to main window

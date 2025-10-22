@@ -125,6 +125,15 @@ function setupIpcListeners() {
     showAssignmentView();
   });
 
+  // Listen for view switching from main process
+  ipcRenderer.on('switch-to-view', (event, viewName) => {
+    if (viewName === 'scraping' || viewName === 'browser') {
+      showBrowserView();
+    } else if (viewName === 'assignments') {
+      showAssignmentView();
+    }
+  });
+
   // Listen for Jupiter login form requests
   ipcRenderer.on('show-jupiter-form', () => {
     showJupiterLoginForm();

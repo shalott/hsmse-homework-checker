@@ -18,7 +18,6 @@ async function checkJupiterCredentials() {
     return { success: true, credentials };
   } catch (error) {
     logToRenderer('Jupiter Ed credentials not found.', 'instruction');
-    logToRenderer('Please enter your Jupiter Ed username and password.', 'instruction');
     return { success: false, reason: 'jupiter_credentials_required' };
   }
 }
@@ -205,10 +204,6 @@ async function handleJupiterAccess(browserView, mainWindow) {
   if (credentialsCheck.success) {
     return await loginToJupiter(browserView, credentialsCheck.credentials);
   } else {
-    // Ask the renderer to show the login form
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('show-jupiter-login');
-    }
     return credentialsCheck;
   }
 }

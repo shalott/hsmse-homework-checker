@@ -17,6 +17,9 @@ const { scrapeGoogleClassroomAssignments, convertToStandardFormat: convertGoogle
 const { scrapeJupiterAssignments, convertToStandardFormat: convertJupiterAssignments } = require('scrapers/jupiter-scraper');
 const { saveAssignments } = require('scrapers/assignment-utils');
 
+// Import pre-scraping checks
+const { runPreScrapingChecks, waitForUserAction } = require('core/pre-scraping-checks');
+
 // Keep a global reference of the window object
 let mainWindow;
 let browserView; // Single browser view for all scraping operations
@@ -374,7 +377,7 @@ async function runJupiterWorkflow() {
     // Ensure we have a browser view
     createBrowserView();
     
-    // Step 1: Authenticate with Jupiter
+    // Step 1: Authenticate with Jupiter (credentials guaranteed to exist from pre-checks)
     const accessResult = await handleJupiterAccess(browserView, mainWindow);
     if (!accessResult.success) {
       return { success: false, error: 'Jupiter access failed', assignments: [] };
@@ -486,10 +489,48 @@ ipcMain.on('log-message', (event, { message, type, timestamp }) => {
   console.log(`[${timestamp}] [RENDERER] [${type.toUpperCase()}] ${message}`);
 });
 
+// Handle view switching from main process
+ipcMain.handle('switch-to-view', async (event, viewName) => {
+  mainWindow.webContents.send('switch-to-view', viewName);
+  return { success: true };
+});
+
 ipcMain.handle('start-unified-auth', async () => {
-  logToRenderer('Starting sequential workflows for all accounts...', 'info');
+  logToRenderer('Starting assignment update process...', 'info');
   
   try {
+    // Step 1: Run pre-scraping checks
+    logToRenderer('=== PRE-SCRAPING CHECKS ===', 'info');
+    const checkResults = await runPreScrapingChecks(mainWindow);
+    
+    // Handle user action requirements
+    let finalCheckResults = checkResults;
+    if (checkResults.requiresUserAction) {
+      logToRenderer(`Pre-scraping check requires user action: ${checkResults.userActionType}`, 'instruction');
+      const actionResult = await waitForUserAction(mainWindow, checkResults.userActionType);
+      
+      if (!actionResult.success) {
+        return { success: false, error: `User action failed: ${actionResult.message}` };
+      }
+      
+      // Re-run checks after user action
+      logToRenderer('Re-running pre-scraping checks after user action...', 'info');
+      finalCheckResults = await runPreScrapingChecks(mainWindow);
+      if (!finalCheckResults.success) {
+        return { success: false, error: 'Pre-scraping checks still failing after user action' };
+      }
+    }
+    
+    if (!finalCheckResults.success) {
+      return { success: false, error: 'Pre-scraping checks failed - cannot proceed with scraping' };
+    }
+    
+    // Switch to scraping view after successful pre-scraping checks
+    logToRenderer('Pre-scraping checks completed successfully - switching to scraping view', 'info');
+    mainWindow.webContents.send('switch-to-view', 'scraping');
+    
+    logToRenderer('=== STARTING SCRAPING WORKFLOWS ===', 'info');
+    
     // Ensure we have a browser view
     createBrowserView();
     
@@ -541,8 +582,8 @@ ipcMain.handle('save-jupiter-credentials', async (event, { student_name, passwor
     const saveResult = await saveJupiterCredentials(credentials);
     
     if (saveResult.success) {
-      logToRenderer('Attempting to log in to Jupiter Ed...', 'info');
-      return await loginToJupiter(browserView, credentials);
+      logToRenderer('Jupiter credentials saved successfully', 'info');
+      return { success: true, message: 'Credentials saved successfully' };
     } else {
       return saveResult;
     }

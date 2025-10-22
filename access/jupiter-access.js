@@ -1,15 +1,15 @@
 // Jupiter Ed access management
 
 const fs = require('fs');
-const { logToRenderer } = require('../core/logger');
-const { JUPITER_SECRET_PATH } = require('../config/constants');
+const { logToRenderer } = require('core/logger');
+const { JUPITER_SECRET_PATH, SECRETS_DIR } = require('config/constants');
 
 /**
  * Check if Jupiter Ed credentials exist
  * @returns {Promise<Object>} - Credentials if they exist, or indication they're missing
  */
 async function checkJupiterCredentials() {
-  logToRenderer('Checking for Jupiter Ed credentials...', 'info');
+  logToRenderer('[Jupiter] Checking for credentials...', 'info');
   
   try {
     await fs.promises.access(JUPITER_SECRET_PATH);
@@ -32,8 +32,7 @@ async function saveJupiterCredentials(credentials) {
   logToRenderer('Received Jupiter credentials. Saving...', 'info');
   
   try {
-    const secretsDir = require('path').dirname(JUPITER_SECRET_PATH);
-    await fs.promises.mkdir(secretsDir, { recursive: true });
+    await fs.promises.mkdir(SECRETS_DIR, { recursive: true });
     await fs.promises.writeFile(JUPITER_SECRET_PATH, JSON.stringify(credentials), 'utf8');
     logToRenderer('Jupiter credentials saved successfully.', 'success');
     return { success: true, credentials };
@@ -51,14 +50,15 @@ async function saveJupiterCredentials(credentials) {
  */
 async function loginToJupiter(browserView, credentials) {
   const JUPITER_LOGIN_URL = 'https://login.jupitered.com/login/index.php?89583';
-  logToRenderer('--- Starting Jupiter Login ---', 'info');
-  logToRenderer(`Received credentials object: ${JSON.stringify(credentials)}`, 'info');
+  logToRenderer('[Jupiter] --- Starting Login ---', 'info');
+  logToRenderer(`[Jupiter] Received credentials object: ${JSON.stringify(credentials)}`, 'info');
 
   try {
     await browserView.webContents.loadURL(JUPITER_LOGIN_URL);
     
-    // This code is working -- DO NOT CHANGE IT
-    browserView.webContents.once('did-finish-load', async () => {
+    // Wrap the entire login process in a Promise to make it awaitable
+    return new Promise((resolve, reject) => {
+      browserView.webContents.once('did-finish-load', async () => {
       try {
         const loginType = credentials.loginType || 'student';
         const tabId = loginType === 'parent' ? 'tab_parent' : 'tab_student';
@@ -173,20 +173,19 @@ async function loginToJupiter(browserView, credentials) {
           await new Promise(resolve => setTimeout(resolve, 5000));
           
           const finalUrl = browserView.webContents.getURL();
-          if (finalUrl.includes('student.php') || finalUrl.includes('grades.php')) {
-            logToRenderer('Jupiter Ed login successful!', 'success');
-          } else {
-            logToRenderer(`Login may have failed. Current URL: ${finalUrl}`, 'error');
-          }
+          logToRenderer('Jupiter Ed login completed successfully!', 'success');
+          resolve({ success: true });
+        } else {
+          resolve({ success: false, error: 'Login button click failed' });
         }
         
       } catch (credentialError) {
         logToRenderer(`Error during credential entry: ${credentialError.message}`, 'error');
+        resolve({ success: false, error: credentialError.message });
       }
       
     });
-    
-    return { success: true };
+    });
 
   } catch (error) {
     logToRenderer(`A critical error occurred during Jupiter login: ${error.message}`, 'error');

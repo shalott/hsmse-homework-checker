@@ -47,6 +47,9 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
+# Old tools
+old_python_tools/
+
 # Logs
 *.log
 assignment_extraction.log

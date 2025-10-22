@@ -2,7 +2,7 @@
   "name": "homework_checker",
   "version": "1.0.0",
   "description": "Desktop application for scraping homework assignments from Google Classroom and Jupiter Ed",
-  "main": "electron/main.js",
+  "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "NODE_ENV=development electron .",
@@ -36,7 +36,13 @@
       "output": "dist"
     },
     "files": [
-      "electron/**/*",
+      "main.js",
+      "main.html",
+      "main.css",
+      "access/**/*",
+      "config/**/*",
+      "core/**/*",
+      "scrapers/**/*",
       "data/**/*",
       "*.html.template",
       "test_config.json",
@@ -63,8 +69,7 @@
             "x64"
           ]
         }
-      ],
-      "icon": "electron/assets/icon.icns"
+      ]
     },
     "win": {
       "target": [
@@ -75,8 +80,7 @@
             "ia32"
           ]
         }
-      ],
-      "icon": "electron/assets/icon.ico"
+      ]
     },
     "linux": {
       "target": [
@@ -86,8 +90,7 @@
             "x64"
           ]
         }
-      ],
-      "icon": "electron/assets/icon.png"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -98,6 +101,7 @@
     }
   },
   "dependencies": {
+    "app-module-path": "^2.2.0",
     "cheerio": "^1.1.2",
     "fs-extra": "^11.3.2",
     "puppeteer": "^24.25.0"

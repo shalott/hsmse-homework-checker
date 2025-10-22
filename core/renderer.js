@@ -46,6 +46,12 @@ function initializeApp() {
     jupiterStudentName: document.getElementById('jupiter-student-name'),
     jupiterPassword: document.getElementById('jupiter-password'),
 
+    // Suspicious Results Dialog
+    suspiciousResultsDialog: document.getElementById('suspicious-results-dialog'),
+    suspiciousResultsList: document.getElementById('suspicious-results-list'),
+    confirmSuspiciousBtn: document.getElementById('confirm-suspicious-btn'),
+    rejectSuspiciousBtn: document.getElementById('reject-suspicious-btn'),
+
     // Status and logs
     logContainer: document.getElementById('log-container'),
     statusUrl: document.getElementById('status-url')
@@ -91,6 +97,10 @@ function setupEventListeners() {
   
   // Jupiter form submission
   elements.jupiterForm.addEventListener('submit', handleJupiterFormSubmit);
+
+  // Suspicious results dialog
+  elements.confirmSuspiciousBtn.addEventListener('click', handleConfirmSuspiciousResults);
+  elements.rejectSuspiciousBtn.addEventListener('click', handleRejectSuspiciousResults);
 
   // IPC listeners
   setupIpcListeners();
@@ -139,6 +149,11 @@ function setupIpcListeners() {
     showJupiterLoginForm();
   });
 
+  // Listen for suspicious results dialog requests
+  ipcRenderer.on('show-suspicious-results-dialog', (event, anomalies) => {
+    showSuspiciousResultsDialog(anomalies);
+  });
+
   // Listen for request to show Jupiter login
   ipcRenderer.on('show-jupiter-login', () => {
     showJupiterLoginForm();
@@ -166,11 +181,16 @@ async function handleUpdateAssignments() {
       addLogEntry(`Update failed: ${result.error}`, 'error');
     }
     
-    // Refresh assignment display and automatically return to assignment view
+    // Refresh assignment display and conditionally return to assignment view
     if (assignmentTracker) {
       assignmentTracker.onDataCollectionComplete();
     }
-    showAssignmentView(); // Automatically show assignments view after completion
+    
+    // Only auto-switch to assignments view if the operation was successful
+    if (result.success) {
+      showAssignmentView();
+    }
+    // If there were failures, stay in scraping view so user can see error dialog
     
   } catch (error) {
     addLogEntry(`Error during update: ${error.message}`, 'error');
@@ -234,8 +254,6 @@ function showBrowserView() {
   ipcRenderer.send('switch-tab', 'browser');
 }
 
-
-
 // Show the Jupiter login form
 function showJupiterLoginForm() {
   // Make sure we're in browser view first
@@ -266,6 +284,50 @@ function handleJupiterFormSubmit(event) {
   } else {
     addLogEntry('Student Name and password are required.', 'error');
   }
+}
+
+// Show the suspicious results confirmation dialog
+function showSuspiciousResultsDialog(anomalies) {
+  // Build the anomalies list HTML
+  const listHtml = anomalies.map(anomaly => {
+    const lastDate = anomaly.lastBackupDate ? 
+      new Date(anomaly.lastBackupDate).toLocaleString() : 
+      'Unknown';
+    
+    return `
+      <div class="suspicious-result-item" data-source="${anomaly.source}">
+        <strong>${anomaly.sourceDisplay}</strong><br>
+        Current run: <strong>0 assignments</strong><br>
+        Previous run: <strong>${anomaly.previousCount} assignments</strong><br>
+        Last successful check: ${lastDate}
+      </div>
+    `;
+  }).join('');
+
+  elements.suspiciousResultsList.innerHTML = listHtml;
+  elements.suspiciousResultsDialog.classList.add('active');
+}
+
+// Handle confirming suspicious results (use new data)
+function handleConfirmSuspiciousResults() {
+  elements.suspiciousResultsDialog.classList.remove('active');
+  ipcRenderer.send('suspicious-results-response', {
+    action: 'confirm',
+    rejectedSources: []
+  });
+}
+
+// Handle rejecting suspicious results (use backup data)
+function handleRejectSuspiciousResults() {
+  // Get all sources that were flagged as suspicious
+  const suspiciousItems = elements.suspiciousResultsList.querySelectorAll('.suspicious-result-item');
+  const rejectedSources = Array.from(suspiciousItems).map(item => item.dataset.source);
+  
+  elements.suspiciousResultsDialog.classList.remove('active');
+  ipcRenderer.send('suspicious-results-response', {
+    action: 'reject',
+    rejectedSources: rejectedSources
+  });
 }
 
 // Update the instructions panel

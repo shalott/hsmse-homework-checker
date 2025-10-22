@@ -214,6 +214,32 @@
               </form>
             </div>
           </div>
+
+          <!-- Suspicious Results Confirmation Dialog (Initially Hidden) -->
+          <div
+            id="suspicious-results-dialog"
+            class="suspicious-results-overlay">
+            <div class="suspicious-results-container">
+              <h3>⚠️ Suspicious Scraping Results</h3>
+              <p>
+                Some scrapers returned no assignments, but previous runs had
+                assignments. This might indicate a scraping failure.
+              </p>
+
+              <div id="suspicious-results-list" class="suspicious-results-list">
+                <!-- Dynamic content will be inserted here -->
+              </div>
+
+              <div class="suspicious-results-actions">
+                <button id="confirm-suspicious-btn" class="btn btn-secondary">
+                  Confirm - Use New Results
+                </button>
+                <button id="reject-suspicious-btn" class="btn btn-primary">
+                  Reject - Use Previous Data
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Logs Pane at Bottom -->

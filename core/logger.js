@@ -22,8 +22,32 @@ function writeToLogFile(message, type, timestamp) {
   try {
     const logEntry = `[${timestamp}] [${type.toUpperCase()}] ${message}\n`;
     fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
+    
+    // Truncate log file if it gets too large (keep last 1500 lines)
+    truncateLogFile();
   } catch (error) {
     console.error('Failed to write to log file:', error);
+  }
+}
+
+// Helper function to truncate log file to last 1500 lines
+function truncateLogFile() {
+  try {
+    // Only truncate occasionally to avoid performance issues
+    if (Math.random() < 0.01) { // 1% chance on each write
+      if (fs.existsSync(LOG_FILE)) {
+        const logContent = fs.readFileSync(LOG_FILE, 'utf8');
+        const lines = logContent.split('\n');
+        
+        if (lines.length > 1500) {
+          const lastLines = lines.slice(-1500); // Keep last 1500 lines
+          fs.writeFileSync(LOG_FILE, lastLines.join('\n'), 'utf8');
+          console.log(`Log file truncated to ${lastLines.length} lines`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to truncate log file:', error);
   }
 }
 

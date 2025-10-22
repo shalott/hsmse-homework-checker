@@ -61,10 +61,8 @@ secrets/
 *cookies*
 
 # Generated data files (these change frequently)
-data/all_assignments.json
-data/all_gclassroom_assignments.json
-data/gclassroom_assignments_*.json
-data/jupiter_assignments.json
+data/*
+!data/.gitkeep
 
 # Generated HTML file (created from template)
 index.html

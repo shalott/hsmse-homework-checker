@@ -300,6 +300,108 @@ body {
   display: flex;
 }
 
+/* Suspicious results confirmation overlay */
+.suspicious-results-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 101;
+}
+
+.suspicious-results-overlay.active {
+  display: flex;
+}
+
+.suspicious-results-container {
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  max-width: 500px;
+  min-width: 400px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.suspicious-results-container h3 {
+  margin: 0 0 16px 0;
+  color: #dc3545;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suspicious-results-list {
+  margin: 16px 0;
+  padding: 0;
+}
+
+.suspicious-result-item {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.suspicious-result-item strong {
+  color: #856404;
+}
+
+.suspicious-results-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.suspicious-results-actions .btn {
+  min-width: 120px;
+}
+
+/* Simple error alert overlay */
+.error-alert-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 102;
+}
+
+.error-alert-overlay.active {
+  display: flex;
+}
+
+.error-alert-container {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 350px;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.error-alert-container h3 {
+  margin: 0 0 12px 0;
+  color: #dc3545;
+}
+
+.error-alert-container p {
+  margin: 0 0 16px 0;
+  color: #6c757d;
+}
+
 /* Logs pane at bottom */
 .logs-pane {
   height: 200px; /* Fixed height for ~10 lines */
@@ -1048,4 +1150,8 @@ body {
 
 .fade-in {
   animation: fadeIn 0.3s ease-in-out;
+}
+
+.dialog-buttons button:first-child {
+  margin-right: 10px;
 }

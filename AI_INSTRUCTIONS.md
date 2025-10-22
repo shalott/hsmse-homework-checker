@@ -46,6 +46,8 @@ Only use `npm start` or process management if the user **explicitly requests** i
 - Add `require('app-module-path').addPath(__dirname)` (main process) or `require('app-module-path').addPath(require('path').resolve(__dirname, '..'))` (renderer process)
 - Use `require('core/logger')` instead of `require('../core/logger')`
 
+- ALWAYS use proper Promise-based waits
+
 **File Paths and Constants:**
 
 - Never hardcode pathnames and filenames in code

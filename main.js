@@ -1,7 +1,7 @@
 // Setup absolute requires from project root
 require('app-module-path').addPath(__dirname);
 
-const { app, BrowserWindow, BrowserView, ipcMain } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -18,6 +18,10 @@ const { scrapeJupiterAssignments, convertToStandardFormat: convertJupiterAssignm
 const { saveAssignments } = require('scrapers/assignment-utils');
 
 // Import pre-scraping checks
+const AssignmentBackup = require('core/assignment-backup');
+
+// Initialize backup system
+const backupSystem = new AssignmentBackup();
 const { runPreScrapingChecks, waitForUserAction } = require('core/pre-scraping-checks');
 
 // Keep a global reference of the window object
@@ -89,6 +93,20 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+// Alert user and wait for confirmation
+async function alertUser(title, message) {
+  return new Promise((resolve) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: title,
+      message: message,
+      buttons: ['OK']
+    }).then(() => {
+      resolve();
+    });
+  });
+}
 
 // Create BrowserView if it doesn't exist
 function createBrowserView() {
@@ -451,17 +469,99 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
       logToRenderer(`Jupiter workflow failed: ${jupiterResult.error}`, 'warn');
     }
     
-    // Save all assignments
-    const saveSuccess = await saveAssignments(allAssignments);
-    if (saveSuccess) {
-      logToRenderer(`Successfully saved ${allAssignments.length} total assignments`, 'success');
+    // Step 1: Create backup before processing results
+    logToRenderer('Creating backup of current assignments...', 'info');
+    await backupSystem.createBackup();
+    
+    // Step 2: Load previous data for comparison
+    const previousData = backupSystem.loadMostRecentBackup();
+    
+    // Step 3: Check for any failures and alert user if needed
+    logToRenderer(`Checking results: Google0=${!!google0Result?.success}, Google1=${!!google1Result?.success}, Jupiter=${!!jupiterResult?.success}`, 'info');
+    
+    const anyFailures = (!google0Result || !google0Result.success) ||
+                       (!google1Result || !google1Result.success) ||
+                       (!jupiterResult || !jupiterResult.success);
+    
+    if (anyFailures) {
+      logToRenderer('Some scrapers failed - showing error alert', 'error');
+      await alertUser('Scraping Failure', 'One or more scrapers failed. Please check the logs for details.');
     } else {
-      logToRenderer('Failed to save assignments to file', 'warn');
+      logToRenderer('All scrapers completed successfully', 'success');
     }
     
-    // Automatically switch to assignments view after saving
-    if (mainWindow && mainWindow.webContents) {
+    // Step 4: Handle suspicious zero results for backup system
+    const scrapingResults = { 
+      google0Result: google0Result, 
+      google1Result: google1Result, 
+      jupiterResult: jupiterResult 
+    };
+    const analysis = backupSystem.analyzeResults(scrapingResults, previousData?.data);
+    
+    if (analysis.suspiciousResults) {
+      logToRenderer(`Detected suspicious results - requesting user confirmation`, 'warning');
+      
+      const userResponse = await new Promise((resolve) => {
+        // Send confirmation request to renderer
+        mainWindow.webContents.send('show-suspicious-results-dialog', analysis.anomalies);
+        
+        // Listen for response
+        const responseHandler = (event, response) => {
+          ipcMain.removeListener('suspicious-results-response', responseHandler);
+          resolve(response);
+        };
+        
+        ipcMain.once('suspicious-results-response', responseHandler);
+      });
+      
+      if (userResponse && userResponse.action === 'reject') {
+        logToRenderer('User rejected suspicious results - merging from backup', 'info');
+        const sourcesToRestore = userResponse.rejectedSources || [];
+        const finalResults = await backupSystem.mergeFromBackup(scrapingResults, sourcesToRestore);
+        
+        // Rebuild allAssignments with merged data
+        allAssignments = [];
+        
+        if (finalResults.google0Result && finalResults.google0Result.success) {
+          const standardizedGoogle0 = await convertGoogleAssignments(finalResults.google0Result.assignments);
+          allAssignments.push(...standardizedGoogle0);
+        }
+        
+        if (finalResults.google1Result && finalResults.google1Result.success) {
+          const standardizedGoogle1 = await convertGoogleAssignments(finalResults.google1Result.assignments);
+          allAssignments.push(...standardizedGoogle1);
+        }
+        
+        if (finalResults.jupiterResult && finalResults.jupiterResult.success) {
+          const standardizedJupiter = await convertJupiterAssignments(finalResults.jupiterResult.assignments);
+          allAssignments.push(...standardizedJupiter);
+        }
+        
+        logToRenderer(`Rebuilt assignments with backup data: ${allAssignments.length} total assignments`, 'success');
+      }
+    }
+    
+    // Step 5: Save all assignments (but not if we have failures and 0 assignments)
+    if (anyFailures && allAssignments.length === 0) {
+      logToRenderer('Not saving assignments - all scrapers failed and no assignments collected', 'warning');
+      logToRenderer('Previous assignments file preserved', 'info');
+    } else {
+      const saveSuccess = await saveAssignments(allAssignments);
+      if (saveSuccess) {
+        logToRenderer(`Successfully saved ${allAssignments.length} total assignments`, 'success');
+        
+        // Clean up old backups
+        backupSystem.cleanupOldBackups(5);
+      } else {
+        logToRenderer('Failed to save assignments to file', 'warn');
+      }
+    }
+    
+    // Automatically switch to assignments view after saving (only if no failures)
+    if (mainWindow && mainWindow.webContents && !anyFailures) {
       mainWindow.webContents.send('switch-to-assignments-view');
+    } else if (anyFailures) {
+      logToRenderer('Not auto-switching to assignments view due to scraping failures', 'info');
     }
     
     // Switch back to main browser view
@@ -562,19 +662,22 @@ ipcMain.handle('start-unified-auth', async () => {
     const finalGoogle1Result = results.find(r => r.type === 'google1').result;
     const finalJupiterResult = results.find(r => r.type === 'jupiter').result;
     
-    return await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult);
+    try {
+      return await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult);
+    } catch (processingError) {
+      logToRenderer(`Error processing workflow results: ${processingError.message}`, 'error');
+      logToRenderer('Showing error alert due to processing failure', 'error');
+      await alertUser('Processing Error', `Error processing workflow results: ${processingError.message}`);
+      return { success: false, error: `Processing failed: ${processingError.message}` };
+    }
 
   } catch (error) {
     logToRenderer(`Error in integrated workflow: ${error.message}`, 'error');
+    logToRenderer('Showing error alert due to workflow failure', 'error');
+    await alertUser('Workflow Error', `An error occurred in the integrated workflow: ${error.message}`);
     return { success: false, error: error.message };
   }
 });
-
-
-
-
-
-
 
 ipcMain.handle('save-jupiter-credentials', async (event, { student_name, password, loginType }) => {
   try {

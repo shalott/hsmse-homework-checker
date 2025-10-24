@@ -269,7 +269,7 @@ function parseTsvForAssignments(tsvData) {
         assignments.push({
           name: 'Geometry Test',
           class: courseName,
-          due_date: cellDate.toISOString(),
+          due_date: cellDate,
           due_date_parsed: cellDate.toISOString(),
           url: '',
           description: cellContent,
@@ -292,7 +292,7 @@ function parseTsvForAssignments(tsvData) {
             assignments.push({
               name: hwMatch[0],
               class: courseName,
-              due_date: explicitDueDate.toISOString(),
+              due_date: explicitDueDate,
               due_date_parsed: explicitDueDate.toISOString(),
               url: '',
               description: `Assigned ${weekdayNames[dayIndex]}, ${cellDate.toLocaleDateString()}`,

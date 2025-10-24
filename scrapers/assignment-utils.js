@@ -124,12 +124,58 @@ function formatDateTimeString(date) {
   return date.toISOString();
 }
 
+/**
+ * Cleans up course names by removing room numbers, section numbers, etc.
+ * Removes everything from the first word containing a digit onwards.
+ * @param {string} courseName - The original course name
+ * @returns {string} - The cleaned course name
+ */
+function cleanCourseName(courseName) {
+  if (!courseName) return courseName;
+  
+  const words = courseName.trim().split(/\s+/);
+  const cleanWords = [];
+  
+  for (const word of words) {
+    // Check if word contains any digit
+    if (/\d/.test(word)) {
+      break; // Stop at first word with a digit
+    }
+    cleanWords.push(word);
+  }
+  
+  // If we'd have an empty string, return the original
+  return cleanWords.length > 0 ? cleanWords.join(' ') : courseName;
+}
+
 function createAssignmentObject(name, className, dueDate, url, description = '', maxPoints = 0) {
+  // Parse the due date for internal use
+  const parsed = parseDueDate(dueDate);
+
+  // Prepare a user-friendly display value for the due date.
+  // If we have a parsed ISO timestamp, convert to a local date string
+  // (no time) to avoid showing UTC offsets like "T04:00:00.000Z" in the UI.
+  let displayDue = '';
+  if (parsed) {
+    const dt = new Date(parsed);
+    if (!isNaN(dt.getTime())) {
+      // Format like: "Oct 22, 2025"
+      displayDue = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } else {
+      displayDue = dueDate || '';
+    }
+  } else {
+    // If there's no parsed date, keep original string or mark as 'No due date'
+    displayDue = dueDate && typeof dueDate === 'string' && dueDate.trim() ? dueDate.trim() : '';
+  }
+
   return {
     name,
-    class: className,
-    due_date: dueDate,
-    due_date_parsed: parseDueDate(dueDate),
+    class: cleanCourseName(className),
+    // Human-friendly date for display (no timezone artifacts)
+    due_date: displayDue || 'No due date',
+    // Keep an ISO timestamp (or null) for comparisons and filtering
+    due_date_parsed: parsed,
     url,
     description,
     max_points: maxPoints
@@ -169,6 +215,7 @@ async function loadAssignments(filename = ASSIGNMENTS_FILE) {
 module.exports = {
   parseDueDate,
   createAssignmentObject,
+  cleanCourseName,
   saveAssignments,
   loadAssignments,
   DATA_DIR,

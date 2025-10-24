@@ -13,6 +13,7 @@ const SCRAPERS_DIR = path.join(APP_DIR, 'scrapers');
 
 // Data directory paths
 const DATA_DIR = path.join(APP_DIR, 'data');
+const TEMP_DIR = path.join(DATA_DIR, 'temp');
 const SECRETS_DIR = path.join(APP_DIR, 'secrets');
 
 // Google Classroom configuration
@@ -39,6 +40,7 @@ module.exports = {
   ACCESS_DIR,
   SCRAPERS_DIR,
   DATA_DIR,
+  TEMP_DIR,
   SECRETS_DIR,
   GOOGLE_CLASSROOM_URL_BASE,
   GOOGLE_CLASSROOM_ASSIGNMENTS_PATH,

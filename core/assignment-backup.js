@@ -87,11 +87,13 @@ class AssignmentBackup {
     try {
       const recentBackup = this.getMostRecentBackup();
       if (!recentBackup) {
+        logToRenderer('No backup files found in backup directory', 'warning');
         return null;
       }
 
+      logToRenderer(`Reading backup file: ${recentBackup.path}`, 'info');
       const backupData = JSON.parse(fs.readFileSync(recentBackup.path, 'utf8'));
-      logToRenderer(`Loaded backup from ${recentBackup.name}`, 'info');
+      logToRenderer(`Loaded backup from ${recentBackup.name} with ${backupData.assigned ? backupData.assigned.length : 0} assignments`, 'success');
       return {
         data: backupData,
         backupDate: recentBackup.mtime,
@@ -122,13 +124,14 @@ class AssignmentBackup {
       successfulSources: 0
     };
 
-    if (!previousData || !previousData.assigned) {
-      logToRenderer('No previous data for comparison', 'info');
+    // previousData is a direct array, not an object with .assigned
+    if (!previousData || !Array.isArray(previousData) || previousData.length === 0) {
+      logToRenderer('No previous data for comparison (or empty backup)', 'info');
       return analysis;
     }
 
     // Count assignments by source in previous data
-    const previousBySource = this.countAssignmentsBySource(previousData.assigned);
+    const previousBySource = this.countAssignmentsBySource(previousData);
     analysis.previousCounts = previousBySource;
 
     // Analyze each scraper result
@@ -198,11 +201,25 @@ class AssignmentBackup {
    * @returns {Object} - Count by source
    */
   countAssignmentsBySource(assignments) {
-    const counts = {};
+    const counts = {
+      'google_classroom_0': 0,
+      'google_classroom_1': 0,
+      'jupiter': 0
+    };
+    
     assignments.forEach(assignment => {
-      const source = assignment.source || 'unknown';
-      counts[source] = (counts[source] || 0) + 1;
+      const url = assignment.url || '';
+      
+      if (url.startsWith('https://classroom.google.com/u/0')) {
+        counts['google_classroom_0']++;
+      } else if (url.startsWith('https://classroom.google.com/u/1')) {
+        counts['google_classroom_1']++;
+      } else if (url.startsWith('https://login.jupitered.com')) {
+        counts['jupiter']++;
+      }
+      // If URL doesn't match any pattern, we don't count it
     });
+    
     return counts;
   }
 
@@ -213,8 +230,8 @@ class AssignmentBackup {
    */
   mapSourceName(sourceName) {
     const mapping = {
-      'google0': 'google_classroom',
-      'google1': 'google_classroom', 
+      'google0': 'google_classroom_0',
+      'google1': 'google_classroom_1', 
       'jupiter': 'jupiter'
     };
     return mapping[sourceName] || sourceName;
@@ -243,19 +260,29 @@ class AssignmentBackup {
   async mergeFromBackup(currentResults, sourcesToRestore) {
     try {
       const backup = this.loadMostRecentBackup();
-      if (!backup) {
+      if (!backup || !backup.data) {
         logToRenderer('No backup available for merge', 'error');
         return currentResults;
       }
 
-      const backupAssignments = backup.data.assigned || [];
+      const backupAssignments = backup.data; // backup.data is the array directly
       let mergedResults = { ...currentResults };
 
       for (const source of sourcesToRestore) {
         const sourceDataName = this.mapSourceName(source);
-        const backupAssignmentsForSource = backupAssignments.filter(
-          assignment => assignment.source === sourceDataName
-        );
+        
+        // Filter assignments by URL pattern instead of source property
+        const backupAssignmentsForSource = backupAssignments.filter(assignment => {
+          const url = assignment.url || '';
+          if (sourceDataName === 'google_classroom_0') {
+            return url.startsWith('https://classroom.google.com/u/0');
+          } else if (sourceDataName === 'google_classroom_1') {
+            return url.startsWith('https://classroom.google.com/u/1');
+          } else if (sourceDataName === 'jupiter') {
+            return url.startsWith('https://login.jupitered.com');
+          }
+          return false;
+        });
 
         logToRenderer(`Merging ${backupAssignmentsForSource.length} assignments from backup for ${this.getSourceDisplayName(source)}`, 'info');
 

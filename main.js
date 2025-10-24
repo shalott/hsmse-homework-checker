@@ -11,10 +11,12 @@ const { BROWSER_VIEW_BOUNDS } = require('config/constants');
 
 // Import access modules
 const { handleJupiterAccess, saveJupiterCredentials, loginToJupiter } = require('access/jupiter-access');
+const { handleGoogleSheetsAccess } = require('access/googlesheets_access');
 
 // Import scraper modules
 const { scrapeGoogleClassroomAssignments, convertToStandardFormat: convertGoogleAssignments } = require('scrapers/google-classroom-scraper');
 const { scrapeJupiterAssignments, convertToStandardFormat: convertJupiterAssignments } = require('scrapers/jupiter-scraper');
+const { scrapeGoogleSheets } = require('scrapers/googlesheets-scraper');
 const { saveAssignments } = require('scrapers/assignment-utils');
 
 // Import pre-scraping checks
@@ -123,6 +125,11 @@ function createBrowserView() {
     });
     
     mainWindow.setBrowserView(browserView);
+    
+    // Open DevTools for the BrowserView to allow inspection of scraped pages
+    if (process.env.NODE_ENV === 'development') {
+      browserView.webContents.openDevTools();
+    }
     
     // Position the BrowserView for the new tabbed layout
     const { width, height } = mainWindow.getBounds();
@@ -415,6 +422,33 @@ async function runJupiterWorkflow() {
   }
 }
 
+// Complete workflow: Google Sheets access + scraping
+async function runGoogleSheetsWorkflow() {
+  logToRenderer('Starting Google Sheets workflow...', 'info');
+  try {
+    // Ensure we have a browser view
+    createBrowserView();
+    
+    // Step 1: Access the Google Sheet (authenticate)
+    const accessResult = await handleGoogleSheetsAccess(browserView);
+    if (!accessResult.success) {
+      return { success: false, error: 'Google Sheets access failed', assignments: [] };
+    }
+    
+    // Step 2: Scrape assignments from the Google Sheet
+    const scrapingResult = await scrapeGoogleSheets(browserView);
+    
+    logToRenderer(`Google Sheets workflow completed: ${scrapingResult.success ? 'Success' : 'Failed'}`, 
+                  scrapingResult.success ? 'success' : 'error');
+                  
+    return scrapingResult;
+    
+  } catch (error) {
+    logToRenderer(`Google Sheets workflow error: ${error.message}`, 'error');
+    return { success: false, error: error.message, assignments: [] };
+  }
+}
+
 // Switch active browser view for user visibility
 function setActiveBrowserView(viewName) {
   // We now only have one browser view, so just show it
@@ -435,7 +469,7 @@ function setActiveBrowserView(viewName) {
 }
 
 // Process results from all workflows and combine them
-async function processWorkflowResults(google0Result, google1Result, jupiterResult) {
+async function processWorkflowResults(google0Result, google1Result, jupiterResult, sheetsResult) {
   const allAssignments = [];
   let totalGoogleAssignments = 0;
   
@@ -469,22 +503,35 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
       logToRenderer(`Jupiter workflow failed: ${jupiterResult.error}`, 'warn');
     }
     
-    // Step 1: Create backup before processing results
+    // Process Google Sheets results
+    if (sheetsResult && sheetsResult.success) {
+      // Google Sheets assignments are already in standardized format
+      allAssignments.push(...sheetsResult.assignments);
+      logToRenderer(`Collected ${sheetsResult.assignments.length} Google Sheets assignments`, 'success');
+    } else if (sheetsResult) {
+      logToRenderer(`Google Sheets workflow failed: ${sheetsResult.error}`, 'warn');
+    }
+    
+    // Step 1: Load previous data for comparison FIRST
+    logToRenderer('Loading previous data for comparison...', 'info');
+    const previousData = backupSystem.loadMostRecentBackup();
+
+    // Step 2: Create backup before processing results
     logToRenderer('Creating backup of current assignments...', 'info');
     await backupSystem.createBackup();
     
-    // Step 2: Load previous data for comparison
-    const previousData = backupSystem.loadMostRecentBackup();
-    
     // Step 3: Check for any failures and alert user if needed
-    logToRenderer(`Checking results: Google0=${!!google0Result?.success}, Google1=${!!google1Result?.success}, Jupiter=${!!jupiterResult?.success}`, 'info');
+    logToRenderer(`Checking results: Google0=${!!google0Result?.success}, Google1=${!!google1Result?.success}, Jupiter=${!!jupiterResult?.success}, Sheets=${!!sheetsResult?.success}`, 'info');
     
     const anyFailures = (!google0Result || !google0Result.success) ||
                        (!google1Result || !google1Result.success) ||
-                       (!jupiterResult || !jupiterResult.success);
+                       (!jupiterResult || !jupiterResult.success) ||
+                       (sheetsResult && !sheetsResult.success);
     
     if (anyFailures) {
       logToRenderer('Some scrapers failed - showing error alert', 'error');
+      // Hide browser view before showing alert
+      mainWindow.setBrowserView(null);
       await alertUser('Scraping Failure', 'One or more scrapers failed. Please check the logs for details.');
     } else {
       logToRenderer('All scrapers completed successfully', 'success');
@@ -494,12 +541,16 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
     const scrapingResults = { 
       google0Result: google0Result, 
       google1Result: google1Result, 
-      jupiterResult: jupiterResult 
+      jupiterResult: jupiterResult,
+      sheetsResult: sheetsResult
     };
     const analysis = backupSystem.analyzeResults(scrapingResults, previousData?.data);
     
     if (analysis.suspiciousResults) {
       logToRenderer(`Detected suspicious results - requesting user confirmation`, 'warning');
+      
+      // Hide browser view before showing confirmation dialog
+      mainWindow.setBrowserView(null);
       
       const userResponse = await new Promise((resolve) => {
         // Send confirmation request to renderer
@@ -641,7 +692,7 @@ ipcMain.handle('start-unified-auth', async () => {
     
     // Run all workflows sequentially (not in parallel)
     const results = [];
-    
+ 
     // Run Google /u/0 workflow
     logToRenderer('Running Google /u/0 workflow...', 'info');
     const google0Result = await runGoogleWorkflow0();
@@ -657,13 +708,19 @@ ipcMain.handle('start-unified-auth', async () => {
     const jupiterResult = await runJupiterWorkflow();
     results.push({ type: 'jupiter', result: jupiterResult });
     
+    // Run Google Sheets workflow
+    logToRenderer('Running Google Sheets workflow...', 'info');
+    const sheetsResult = await runGoogleSheetsWorkflow();
+    results.push({ type: 'sheets', result: sheetsResult });
+    
     // Extract results from our sequential execution
     const finalGoogle0Result = results.find(r => r.type === 'google0').result;
     const finalGoogle1Result = results.find(r => r.type === 'google1').result;
     const finalJupiterResult = results.find(r => r.type === 'jupiter').result;
+    const finalSheetsResult = results.find(r => r.type === 'sheets').result;
     
     try {
-      return await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult);
+      return await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult, finalSheetsResult);
     } catch (processingError) {
       logToRenderer(`Error processing workflow results: ${processingError.message}`, 'error');
       logToRenderer('Showing error alert due to processing failure', 'error');

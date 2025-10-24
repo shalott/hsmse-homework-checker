@@ -393,10 +393,15 @@ class AssignmentTracker {
 
         const now = new Date();
         const upcoming = this.assignments.filter(assignment => {
-            if (!assignment.due_date_parsed) return false;
+            // Include assignments with no due date (they're still pending)
+            if (!assignment.due_date_parsed) return true;
             const dueDate = new Date(assignment.due_date_parsed);
             return dueDate >= now;
         }).sort((a, b) => {
+            // Assignments with no due date go to the end
+            if (!a.due_date_parsed && !b.due_date_parsed) return 0;
+            if (!a.due_date_parsed) return 1;
+            if (!b.due_date_parsed) return -1;
             return new Date(a.due_date_parsed) - new Date(b.due_date_parsed);
         });
 
@@ -540,12 +545,14 @@ class AssignmentTracker {
         const now = new Date();
         
         const upcoming = this.assignments.filter(assignment => {
-            if (!assignment.due_date_parsed) return false;
+            // Include assignments with no due date in the upcoming count
+            if (!assignment.due_date_parsed) return true;
             const dueDate = new Date(assignment.due_date_parsed);
             return dueDate >= now;
         }).length;
 
         const missing = this.assignments.filter(assignment => {
+            // Exclude assignments with no due date from missing count
             if (!assignment.due_date_parsed) return false;
             const dueDate = new Date(assignment.due_date_parsed);
             return dueDate < now;

@@ -32,7 +32,7 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       // Step 1: Load the URL and wait for it to settle
       logToRenderer(`[GoogleC] Loading ${tab.label} tab...`, 'info');
       await browserView.webContents.loadURL(tab.url);
-      await waitBriefly(6000); // Wait for page to load and settle
+      await waitBriefly(1000); // Wait for page to load and settle
       
       // Check if we were redirected to login page
       const currentUrl = browserView.webContents.getURL();
@@ -50,7 +50,7 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       
       // Step 4: Wait a bit more for any final content to settle
       logToRenderer(`[GoogleC] Waiting for final content settlement on ${tab.label} tab...`, 'info');
-      await waitBriefly(2000);
+      await waitBriefly(1000);
       
       // Step 5: Extract assignments from the fully expanded page
       logToRenderer(`[GoogleC] Extracting assignments from ${tab.label} tab...`, 'info');
@@ -140,7 +140,7 @@ async function expandPageContent(browserView) {
   
   if (earlierResult.clickCount > 0) {
     logToRenderer(`[GoogleC] Clicked ${earlierResult.clickCount} Earlier buttons: ${earlierResult.clickedButtons.join(', ')}`, 'info');
-    await waitBriefly(4000);
+    await waitBriefly(1000);
   }
   
   if (earlierResult.skippedButtons.length > 0) {
@@ -207,7 +207,7 @@ async function expandPageContent(browserView) {
   
   if (viewAllResult.clickCount > 0) {
     logToRenderer(`[GoogleC] Clicked ${viewAllResult.clickCount} View All buttons: ${viewAllResult.clickedButtons.join(', ')}`, 'info');
-    await waitBriefly(4000);
+    await waitBriefly(1000);
   }
   
   return { 
@@ -330,7 +330,7 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
   try {
     logToRenderer(`[GoogleC] Visiting details page: ${assignmentUrl}`, 'info');
     await browserView.webContents.loadURL(assignmentUrl);
-    await waitBriefly(3000); // Wait for page to load
+    await waitBriefly(1000); // Wait for page to load
     
     // Extract all the details in one JavaScript execution
     const details = await browserView.webContents.executeJavaScript(`

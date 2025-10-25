@@ -107,7 +107,7 @@ function createSettingsWindow() {
   });
 
   // Load the settings page
-  settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWindow.loadFile(path.join(__dirname, 'windows', 'settings.html'));
 
   // Show window when ready
   settingsWindow.once('ready-to-show', () => {
@@ -330,7 +330,7 @@ function createLogsWindow() {
   });
 
   // Load the logs HTML file
-  logsWindow.loadFile('logs.html');
+  logsWindow.loadFile(path.join(__dirname, 'windows', 'logs.html'));
 
   // Show window when ready
   logsWindow.once('ready-to-show', () => {

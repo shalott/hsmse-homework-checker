@@ -41,6 +41,7 @@ const CORE_DIR = path.join(APP_DIR, 'core');
 const CONFIG_DIR = path.join(APP_DIR, 'config');
 const ACCESS_DIR = path.join(APP_DIR, 'access');
 const SCRAPERS_DIR = path.join(APP_DIR, 'scrapers');
+const WINDOWS_DIR = path.join(APP_DIR, 'windows');
 
 // Data directory paths
 const DATA_DIR = path.join(APP_DIR, 'data');
@@ -75,6 +76,7 @@ module.exports = {
   CONFIG_DIR,
   ACCESS_DIR,
   SCRAPERS_DIR,
+  WINDOWS_DIR,
   DATA_DIR,
   TEMP_DIR,
   SECRETS_DIR,

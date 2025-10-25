@@ -39,7 +39,7 @@ async function showBrowserMessage(browserView, message) {
     }
     
     // Read CSS from external file
-    const cssPath = path.join(__dirname, '..', 'auth-overlay.css');
+    const cssPath = path.join(__dirname, '..', 'windows', 'auth-overlay.css');
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     logToRenderer(`CSS file read successfully, length: ${cssContent.length}`, 'info');
     

@@ -58,8 +58,11 @@ function addLogEntry(message, type = 'info', timestamp = null) {
   
   container.appendChild(entry);
   
-  // Auto-scroll to bottom
-  container.scrollTop = container.scrollHeight;
+  // Only auto-scroll if user is already at the bottom (within last 2-3 entries)
+  const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 100;
+  if (isAtBottom) {
+    container.scrollTop = container.scrollHeight;
+  }
   
   // Limit to last 500 entries to prevent memory issues
   while (container.children.length > 500) {

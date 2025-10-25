@@ -66,7 +66,7 @@ async function saveJupiterCredentials(credentials) {
  */
 async function loginToJupiter(browserView, credentials, mainWindow) {
   logToRenderer('[Jupiter] --- Starting Login ---', 'info');
-  logToRenderer(`[Jupiter] Received credentials object: ${JSON.stringify(credentials)}`, 'info');
+  logToRenderer(`[Jupiter] Received credentials for student: ${credentials.student_name}`, 'info');
 
   try {
     // Ensure browser view is ready and navigate to login page

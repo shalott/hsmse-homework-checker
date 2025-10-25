@@ -17,12 +17,21 @@ body {
 }
 
 .log-entry {
-  padding: 8px 12px;
-  margin-bottom: 4px;
+  padding: 6px 12px;
+  margin-bottom: 2px;
   border-radius: 4px;
   font-size: 13px;
   line-height: 1.4;
   border-left: 3px solid #ccc;
+}
+
+/* Zebra striping for alternating log entries */
+.log-entry:nth-child(even) {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.log-entry:nth-child(odd) {
+  background-color: rgba(0, 0, 0, 0.01);
 }
 
 .log-entry.info {

@@ -88,10 +88,7 @@ function captureCsvDownload(browserView) {
       const filename = `googlesheets.tsv`;
       const savePath = path.join(TEMP_DIR, filename);
       
-      // Ensure temp directory exists
-      if (!fs.existsSync(TEMP_DIR)) {
-        fs.mkdirSync(TEMP_DIR, { recursive: true });
-      }
+      // Temp directory should already exist from pre-scraping checks
       
       item.setSavePath(savePath);
       logToRenderer(`Downloading TSV to ${filename}...`, 'info');

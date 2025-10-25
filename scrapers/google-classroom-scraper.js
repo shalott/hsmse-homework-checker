@@ -34,11 +34,17 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       await browserView.webContents.loadURL(tab.url);
       await waitBriefly(1000); // Wait for page to load and settle
       
-      // Check if we were redirected to login page
+      // Check if we were redirected to login page or wrong account
       const currentUrl = browserView.webContents.getURL();
       if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
         logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
         return { success: false, needsAuth: true, error: 'Authentication required', assignments: [] };
+      }
+      
+      // Check if we were redirected to the wrong account (e.g., trying to access /u/1 but got /u/0)
+      if (currentUrl.includes('classroom.google.com/u/') && !currentUrl.includes(`/u/${accountNumber}/`)) {
+        logToRenderer(`[GoogleC] Account redirect detected: trying to access /u/${accountNumber} but got ${currentUrl}`, 'warn');
+        return { success: false, needsAuth: true, error: 'Wrong account - need to switch accounts', assignments: [] };
       }
       
       // Step 3: Expand all content on this tab
@@ -415,32 +421,17 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
                 dueDate = datePart + (timePart ? ', ' + timePart : '');
               }
               
-              // Return debug info for logging
               return { 
                 description, 
                 maxPoints, 
-                dueDate,
-                debug: {
-                  foundMainDiv,
-                  mainTextLength: mainText.length,
-                  rawDatePart: datePart,
-                  rawTimePart: timePart,
-                  wasTimeOnly: timeOnlyPattern.test(datePart),
-                  mainTextPreview: mainText.substring(0, 200) + '...'
-                }
+                dueDate
               };
             } else {
               // No due date match found
               return { 
                 description, 
                 maxPoints, 
-                dueDate: '',
-                debug: {
-                  foundMainDiv,
-                  mainTextLength: mainText.length,
-                  noDueMatch: true,
-                  mainTextPreview: mainText.substring(0, 200) + '...'
-                }
+                dueDate: ''
               };
             }
           } else {
@@ -448,11 +439,7 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
             return { 
               description, 
               maxPoints, 
-              dueDate: '',
-              debug: {
-                foundMainDiv,
-                noMainText: true
-              }
+              dueDate: ''
             };
           }
         } catch (e) {
@@ -460,10 +447,7 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
           return { 
             description, 
             maxPoints, 
-            dueDate: '',
-            debug: {
-              error: e.message
-            }
+            dueDate: ''
           };
         }
         
@@ -471,27 +455,6 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
         return { description, maxPoints, dueDate };
       })()
     `);
-    
-    // Log the debug information to help troubleshoot
-    if (details.debug) {
-      logToRenderer(`[GoogleC] Due date extraction debug for ${assignmentUrl}:`, 'info');
-      logToRenderer(`[GoogleC]   Found main div: ${details.debug.foundMainDiv}`, 'info');
-      logToRenderer(`[GoogleC]   Main text length: ${details.debug.mainTextLength || 'N/A'}`, 'info');
-      
-      if (details.debug.noDueMatch) {
-        logToRenderer(`[GoogleC]   No due date pattern match found`, 'warning');
-        logToRenderer(`[GoogleC]   Main text preview: "${details.debug.mainTextPreview}"`, 'info');
-      } else if (details.debug.noMainText) {
-        logToRenderer(`[GoogleC]   No main text available`, 'warning');
-      } else if (details.debug.error) {
-        logToRenderer(`[GoogleC]   Error during extraction: ${details.debug.error}`, 'error');
-      } else {
-        logToRenderer(`[GoogleC]   Raw date part: "${details.debug.rawDatePart}"`, 'info');
-        logToRenderer(`[GoogleC]   Raw time part: "${details.debug.rawTimePart}"`, 'info');
-        logToRenderer(`[GoogleC]   Was time only: ${details.debug.wasTimeOnly}`, 'info');
-        logToRenderer(`[GoogleC]   Final due date: "${details.dueDate}"`, 'info');
-      }
-    }
     
     return { 
       description: details.description || '', 

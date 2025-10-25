@@ -9,9 +9,57 @@ function loadJupiterClassesConfig() {
   try {
     const configData = fs.readFileSync(JUPITER_CONFIG_PATH, 'utf8');
     const config = JSON.parse(configData);
-    return config.selected_classes || {};
+    
+    // Filter out metadata fields and return only class selections
+    const classSelections = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (key !== 'last_updated' && (value === 'selected' || value === 'unselected')) {
+        classSelections[key] = value;
+      }
+    }
+    
+    return classSelections;
   } catch (error) {
     logToRenderer(`[Jupiter] Error loading classes config: ${error.message}`, 'warn');
+    return {};
+  }
+}
+
+// Save all available classes to config, preserving existing selections
+function saveAvailableClassesToConfig(availableClasses) {
+  try {
+    let config = {};
+    
+    // Load existing config if it exists
+    if (fs.existsSync(JUPITER_CONFIG_PATH)) {
+      const configData = fs.readFileSync(JUPITER_CONFIG_PATH, 'utf8');
+      config = JSON.parse(configData);
+    }
+    
+    // Get existing selections
+    const existingSelections = config || {};
+    
+    // Create new config with all available classes
+    const allClasses = {};
+    availableClasses.forEach(classInfo => {
+      const className = classInfo.name;
+      // Preserve existing selection, default to "selected" for new classes
+      allClasses[className] = existingSelections[className] || "selected";
+    });
+    
+    // Update config - save directly as the root object
+    Object.assign(config, allClasses);
+    config.last_updated = new Date().toISOString();
+    
+    // Save config
+    fs.writeFileSync(JUPITER_CONFIG_PATH, JSON.stringify(config, null, 2));
+    
+    const selectedCount = Object.values(allClasses).filter(status => status === "selected").length;
+    logToRenderer(`[Jupiter] Updated config with ${availableClasses.length} available classes (${selectedCount} selected)`, 'info');
+    
+    return allClasses;
+  } catch (error) {
+    logToRenderer(`[Jupiter] Error saving available classes to config: ${error.message}`, 'error');
     return {};
   }
 }
@@ -32,15 +80,8 @@ async function scrapeJupiterAssignments(browserView) {
   
   try {
     // Assume we're already logged in from the access module
-    // Navigate to "To Do" page to start scraping
-    const todoSuccess = await navigateToTodoPage(browserView);
-    if (!todoSuccess) {
-      logToRenderer('[Jupiter] Failed to navigate to To Do page', 'error');
-      return { success: false, error: 'Could not access To Do page', assignments: [] };
-    }
-    
-    // Get list of available classes from To Do page
-    const allClasses = await getAvailableClasses(browserView);
+    // Get list of available classes from To Do page (this will navigate to To Do page)
+    const allClasses = await getAvailableJupiterClasses(browserView);
     logToRenderer(`[Jupiter] Found ${allClasses.length} total classes`, 'info');
     
     // Load config and filter to only selected classes
@@ -159,9 +200,16 @@ async function navigateToTodoPage(browserView) {
   }
 }
 
-async function getAvailableClasses(browserView) {
+async function getAvailableJupiterClasses(browserView) {
   try {
     logToRenderer('[Jupiter] Getting available classes from ToDo page...', 'info');
+    
+    // Navigate to To Do page first
+    const todoSuccess = await navigateToTodoPage(browserView);
+    if (!todoSuccess) {
+      logToRenderer('[Jupiter] Failed to navigate to To Do page', 'error');
+      return [];
+    }
     
     return new Promise(async (resolve, reject) => {
       try {
@@ -170,7 +218,7 @@ async function getAvailableClasses(browserView) {
             try {
               const classes = [];
               
-              // Find all class boxes (like in the Python code)
+              // Find all class boxes
               const classBoxes = document.querySelectorAll('.classbox');
               console.log('Found', classBoxes.length, 'class boxes');
               
@@ -216,8 +264,12 @@ async function getAvailableClasses(browserView) {
           })
         `);
         
-        logToRenderer(`[Jupiter] Discovered ${classes.length} available classes`, 'info');
-        resolve(classes);
+    logToRenderer(`[Jupiter] Discovered ${classes.length} available classes`, 'info');
+    
+    // Save all available classes to config
+    saveAvailableClassesToConfig(classes);
+    
+    resolve(classes);
       } catch (error) {
         logToRenderer(`[Jupiter] Error executing JavaScript for class discovery: ${error.message}`, 'error');
         resolve([]);
@@ -398,5 +450,6 @@ async function convertToStandardFormat(rawAssignments) {
 
 module.exports = {
   scrapeJupiterAssignments,
-  convertToStandardFormat
+  convertToStandardFormat,
+  getAvailableJupiterClasses
 };

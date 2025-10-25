@@ -2,8 +2,39 @@
 
 const path = require('path');
 
+// Check if we're running in development mode (npm start)
+let isDevelopment = false;
+try {
+  const { app } = require('electron');
+  isDevelopment = process.env.NODE_ENV === 'development' || 
+                 process.env.npm_lifecycle_event === 'start' ||
+                 !app.isPackaged;
+} catch (e) {
+  // Fallback if electron not available
+  isDevelopment = process.env.NODE_ENV === 'development' || 
+                 process.env.npm_lifecycle_event === 'start';
+}
+
 // Base application directory (project root)
-const APP_DIR = path.resolve(__dirname, '..');
+let userDataRoot;
+
+if (isDevelopment) {
+  // Development mode: use local project directory
+  userDataRoot = path.resolve(__dirname, '..');
+  console.log('Running in development mode, using local directories');
+} else {
+  // Production mode: use Electron's userData directory
+  try {
+    const electron = require('electron');
+    userDataRoot = (electron.app || electron.remote.app).getPath('userData');
+    console.log('Running in production mode, using userData directory');
+  } catch (e) {
+    console.log('Error getting userData root:', e);
+    userDataRoot = path.resolve(__dirname, '..');
+  }
+}
+
+const APP_DIR = userDataRoot;
 
 // Core application directory paths
 const CORE_DIR = path.join(APP_DIR, 'core');
@@ -15,6 +46,11 @@ const SCRAPERS_DIR = path.join(APP_DIR, 'scrapers');
 const DATA_DIR = path.join(APP_DIR, 'data');
 const TEMP_DIR = path.join(DATA_DIR, 'temp');
 const SECRETS_DIR = path.join(APP_DIR, 'secrets');
+const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
+
+// Main data files
+const ASSIGNMENTS_FILE = path.join(DATA_DIR, 'all_assignments.json');
+const LOG_FILE = path.join(TEMP_DIR, 'app.log');
 
 // Google Classroom configuration
 const GOOGLE_CLASSROOM_URL_BASE = 'https://classroom.google.com/u/';
@@ -42,6 +78,9 @@ module.exports = {
   DATA_DIR,
   TEMP_DIR,
   SECRETS_DIR,
+  BACKUPS_DIR,
+  ASSIGNMENTS_FILE,
+  LOG_FILE,
   GOOGLE_CLASSROOM_URL_BASE,
   GOOGLE_CLASSROOM_ASSIGNMENTS_PATH,
   JUPITER_LOGIN_URL,

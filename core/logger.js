@@ -3,23 +3,28 @@
 const fs = require('fs');
 const path = require('path');
 
+// LOG_FILE will be set by initializeLogger when called from main process
+let LOG_FILE = null;
+
 let mainWindow = null;
 let logsWindow = null;
 
-// Ensure logs directory exists
-const LOGS_DIR = path.join(__dirname, '..', 'data', 'temp');
-const LOG_FILE = path.join(LOGS_DIR, 'app.log');
-
-// Create logs directory if it doesn't exist
-try {
-  fs.mkdirSync(LOGS_DIR, { recursive: true });
-} catch (error) {
-  console.error('Failed to create logs directory:', error);
-}
+// LOG_FILE is now imported from constants.js
 
 // Helper function to write to log file
 function writeToLogFile(message, type, timestamp) {
   try {
+    // Skip if LOG_FILE is not set yet (during initialization)
+    if (!LOG_FILE) {
+      return;
+    }
+    
+    // Ensure the log directory exists
+    const logDir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    
     const logEntry = `[${timestamp}] [${type.toUpperCase()}] ${message}\n`;
     fs.appendFileSync(LOG_FILE, logEntry, 'utf8');
     
@@ -54,6 +59,15 @@ function truncateLogFile() {
 // Initialize the logger with the main window reference
 function initializeLogger(window) {
   mainWindow = window;
+  
+  // Set the LOG_FILE path now that we're in the main process
+  try {
+    const { LOG_FILE: logFile } = require('config/constants');
+    LOG_FILE = logFile;
+  } catch (error) {
+    // Fallback if constants aren't available
+    LOG_FILE = path.join(__dirname, '..', 'data', 'temp', 'app.log');
+  }
 }
 
 // Set the logs window reference

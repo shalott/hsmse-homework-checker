@@ -6,22 +6,12 @@
 const fs = require('fs');
 const path = require('path');
 const { logToRenderer } = require('./logger');
+const { BACKUPS_DIR, ASSIGNMENTS_FILE } = require('config/constants');
 
 class AssignmentBackup {
   constructor() {
-    this.backupDir = path.join(__dirname, '..', 'data', 'backups');
-    this.currentFile = path.join(__dirname, '..', 'data', 'all_assignments.json');
-    this.ensureBackupDirectory();
-  }
-
-  /**
-   * Ensure backup directory exists
-   */
-  ensureBackupDirectory() {
-    if (!fs.existsSync(this.backupDir)) {
-      fs.mkdirSync(this.backupDir, { recursive: true });
-      logToRenderer('Created backup directory', 'info');
-    }
+    this.backupDir = BACKUPS_DIR;
+    this.currentFile = ASSIGNMENTS_FILE;
   }
 
   /**

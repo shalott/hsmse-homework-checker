@@ -19,6 +19,9 @@
             <button id="update-assignments" class="btn btn-primary">
               Update Assignments
             </button>
+            <button id="open-settings" class="btn btn-secondary">
+              Settings
+            </button>
           </div>
         </section>
 
@@ -236,6 +239,36 @@
                 </button>
                 <button id="reject-suspicious-btn" class="btn btn-primary">
                   Reject - Use Previous Data
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Jupiter Class Selection Dialog (Initially Hidden) -->
+          <div id="jupiter-class-selection-dialog" class="jupiter-class-selection-overlay">
+            <div class="jupiter-class-selection-container">
+              <h3>Select Jupiter Ed Classes</h3>
+              <p>
+                Please select which classes you want to scrape from Jupiter Ed.
+                You can change this later in Settings.
+              </p>
+
+              <div id="jupiter-classes-list" class="jupiter-classes-list">
+                <!-- Dynamic content will be inserted here -->
+              </div>
+
+              <div class="jupiter-class-selection-actions">
+                <button id="select-all-jupiter-classes" class="btn btn-secondary">
+                  Select All
+                </button>
+                <button id="deselect-all-jupiter-classes" class="btn btn-secondary">
+                  Deselect All
+                </button>
+                <button id="confirm-jupiter-classes" class="btn btn-primary">
+                  Confirm Selection
+                </button>
+                <button id="skip-jupiter-classes" class="btn btn-secondary">
+                  Skip (Scrape All)
                 </button>
               </div>
             </div>

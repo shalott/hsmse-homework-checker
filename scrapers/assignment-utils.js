@@ -182,17 +182,8 @@ function createAssignmentObject(name, className, dueDate, url, description = '',
   };
 }
 
-async function ensureDataDirectory() {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-  }
-}
-
 async function saveAssignments(assignments, filename = ASSIGNMENTS_FILE) {
   try {
-    await ensureDataDirectory();
     await fs.writeFile(filename, JSON.stringify(assignments, null, 2), 'utf8');
     return true;
   } catch (error) {

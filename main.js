@@ -5,9 +5,14 @@ const { app, BrowserWindow, BrowserView, ipcMain, dialog } = require('electron')
 const path = require('path');
 const fs = require('fs');
 
-// Import utilities
+// STEP 1: Load constants FIRST (before anything else)
+const { BROWSER_VIEW_BOUNDS, ASSIGNMENTS_FILE, JUPITER_LOGIN_URL } = require('config/constants');
+
+// STEP 2: Import startup validation (but don't run it yet)
+const { runStartupValidation } = require('core/validation_startup');
+
+// STEP 3: Import logger (but don't initialize it yet)
 const { initializeLogger, logToRenderer, setLogsWindow } = require('core/logger');
-const { BROWSER_VIEW_BOUNDS } = require('config/constants');
 
 // Import access modules
 const { handleJupiterAccess, saveJupiterCredentials, loginToJupiter } = require('access/jupiter-access');
@@ -19,15 +24,16 @@ const { scrapeJupiterAssignments, convertToStandardFormat: convertJupiterAssignm
 const { scrapeGoogleSheets } = require('scrapers/googlesheets-scraper');
 const { saveAssignments } = require('scrapers/assignment-utils');
 
-// Import pre-scraping checks
+// Import validation modules
 const AssignmentBackup = require('core/assignment-backup');
+const { runScrapingValidation, waitForUserAction } = require('core/validation_scraping');
 
 // Initialize backup system
 const backupSystem = new AssignmentBackup();
-const { runPreScrapingChecks, waitForUserAction } = require('core/pre-scraping-checks');
 
 // Keep a global reference of the window object
 let mainWindow;
+let settingsWindow;
 let browserView; // Single browser view for all scraping operations
 
 function createWindow() {
@@ -72,13 +78,87 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
     logToRenderer('DevTools opened (development mode)', 'info');
+    
+    // Also create browser view in development mode so devtools are available for scraping
+    createBrowserView();
+    logToRenderer('Browser view created for development debugging', 'info');
+  }
+}
+
+function createSettingsWindow() {
+  // Don't create multiple settings windows
+  if (settingsWindow) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 700,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    },
+    parent: mainWindow,
+    modal: false,
+    resizable: true,
+    show: false,
+    title: 'Settings - HSMSE Homework Checker'
+  });
+
+  // Load the settings page
+  settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+
+  // Show window when ready
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow.show();
+  });
+
+  // Handle window closed
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+  });
+}
+
+// Initialize the app in the correct order
+async function initializeApp() {
+  try {
+    console.log('Starting app initialization...');
+    
+    // STEP 1: Run startup validation to create directories
+    console.log('Running startup validation...');
+    const startupResult = await runStartupValidation();
+    if (!startupResult.success) {
+      console.error(`Startup validation failed: ${startupResult.message}`);
+      // Continue anyway - the app should still work
+    } else {
+      console.log('Startup validation completed successfully');
+    }
+    
+    // STEP 2: Create the main window
+    console.log('Creating main window...');
+    createWindow();
+    
+    // STEP 3: Initialize logger with the main window
+    console.log('Initializing logger...');
+    initializeLogger(mainWindow);
+    
+    // Add session start header to logs
+    logToRenderer('==========================================', 'info');
+    logToRenderer('START OF SESSION', 'info');
+    logToRenderer('==========================================', 'info');
+    
+    console.log('App initialization completed successfully');
+  } catch (error) {
+    console.error('App initialization failed:', error);
+    // Still try to create the window
+    createWindow();
   }
 }
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
-  logToRenderer('Electron app ready', 'success');
-  createWindow();
+  initializeApp();
 });
 
 // Quit when all windows are closed
@@ -130,6 +210,32 @@ function createBrowserView() {
     if (process.env.NODE_ENV === 'development') {
       browserView.webContents.openDevTools();
     }
+    
+    // Smart devtools shortcuts - open for the appropriate window
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // F12 key
+      if (input.key === 'F12') {
+        event.preventDefault();
+        // If browser view is active and visible, open devtools for it
+        if (browserView && browserView.webContents && mainWindow.getBrowserView() === browserView) {
+          browserView.webContents.openDevTools();
+        } else {
+          // Otherwise open for main window
+          mainWindow.webContents.openDevTools();
+        }
+      }
+      // Cmd+Option+I or Ctrl+Shift+I
+      if ((input.meta && input.alt && input.key === 'I') || (input.control && input.shift && input.key === 'I')) {
+        event.preventDefault();
+        // If browser view is active and visible, open devtools for it
+        if (browserView && browserView.webContents && mainWindow.getBrowserView() === browserView) {
+          browserView.webContents.openDevTools();
+        } else {
+          // Otherwise open for main window
+          mainWindow.webContents.openDevTools();
+        }
+      }
+    });
     
     // Position the BrowserView for the new tabbed layout
     const { width, height } = mainWindow.getBounds();
@@ -223,100 +329,8 @@ function createLogsWindow() {
     show: false
   });
 
-  // Create logs window HTML content - this will show the same logs as the main window
-  const logsHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Logs</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          margin: 0;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .logs-container {
-          background: white;
-          border-radius: 8px;
-          padding: 20px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          height: calc(100vh - 80px);
-          overflow-y: auto;
-        }
-        .log-entry {
-          padding: 8px 12px;
-          margin-bottom: 4px;
-          border-radius: 4px;
-          font-size: 13px;
-          line-height: 1.4;
-          border-left: 3px solid #ccc;
-        }
-        .log-entry.info {
-          background-color: #e3f2fd;
-          border-left-color: #2196f3;
-        }
-        .log-entry.success {
-          background-color: #e8f5e8;
-          border-left-color: #4caf50;
-        }
-        .log-entry.error {
-          background-color: #fde3e3;
-          border-left-color: #f44336;
-        }
-        .log-entry.warning {
-          background-color: #fff3e0;
-          border-left-color: #ff9800;
-        }
-        .log-timestamp {
-          color: #666;
-          font-size: 11px;
-          margin-right: 8px;
-        }
-        h1 {
-          margin-top: 0;
-          color: #333;
-          font-size: 18px;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Application Logs</h1>
-      <div class="logs-container" id="logs-container">
-        <div class="log-entry info">
-          <span class="log-timestamp">${new Date().toLocaleTimeString()}</span>
-          Logs window opened - displaying current session logs
-        </div>
-      </div>
-      <script>
-        const { ipcRenderer } = require('electron');
-        
-        // Listen for log messages from main process (same as main window)
-        ipcRenderer.on('log-message', (event, data) => {
-          const container = document.getElementById('logs-container');
-          const entry = document.createElement('div');
-          entry.className = 'log-entry ' + (data.type || 'info');
-          
-          const timestamp = new Date(data.timestamp || Date.now()).toLocaleTimeString();
-          entry.innerHTML = '<span class="log-timestamp">' + (data.timestamp || timestamp) + '</span>' + data.message;
-          
-          container.appendChild(entry);
-          
-          // Auto-scroll to bottom
-          container.scrollTop = container.scrollHeight;
-          
-          // Limit to last 500 entries to prevent memory issues
-          while (container.children.length > 500) {
-            container.removeChild(container.firstChild);
-          }
-        });
-      </script>
-    </body>
-    </html>
-  `;
-
-  // Load the HTML content
-  logsWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(logsHtml));
+  // Load the logs HTML file
+  logsWindow.loadFile('logs.html');
 
   // Show window when ready
   logsWindow.once('ready-to-show', () => {
@@ -399,10 +413,13 @@ async function runJupiterWorkflow() {
   logToRenderer('Starting Jupiter Ed workflow...', 'info');
   
   try {
-    // Ensure we have a browser view
-    createBrowserView();
+    // Step 1: Setup Jupiter browser
+    const setupResult = await setupJupiterBrowser();
+    if (!setupResult.success) {
+      return { success: false, error: setupResult.error, assignments: [] };
+    }
     
-    // Step 1: Authenticate with Jupiter (credentials guaranteed to exist from pre-checks)
+    // Step 2: Authenticate with Jupiter (credentials guaranteed to exist from pre-checks)
     const accessResult = await handleJupiterAccess(browserView, mainWindow);
     if (!accessResult.success) {
       return { success: false, error: 'Jupiter access failed', assignments: [] };
@@ -467,6 +484,28 @@ function setActiveBrowserView(viewName) {
     logToRenderer(`Browser view activated for ${viewName}`, 'info');
   }
 }
+
+/**
+ * Standard Jupiter browser setup for all Jupiter operations
+ * @returns {Promise<Object>} - Setup result with success status
+ */
+async function setupJupiterBrowser() {
+  try {
+    // Ensure we have a browser view
+    if (!browserView) {
+      createBrowserView();
+    }
+    
+    // Set the browser view as active for user visibility
+    setActiveBrowserView('main');
+    
+    return { success: true };
+  } catch (error) {
+    logToRenderer(`Error setting up Jupiter browser: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+}
+
 
 // Process results from all workflows and combine them
 async function processWorkflowResults(google0Result, google1Result, jupiterResult, sheetsResult) {
@@ -650,9 +689,9 @@ ipcMain.handle('start-unified-auth', async () => {
   logToRenderer('Starting assignment update process...', 'info');
   
   try {
-    // Step 1: Run pre-scraping checks
-    logToRenderer('=== PRE-SCRAPING CHECKS ===', 'info');
-    const checkResults = await runPreScrapingChecks(mainWindow);
+    // Step 1: Run scraping validation checks
+    logToRenderer('=== SCRAPING VALIDATION CHECKS ===', 'info');
+    const checkResults = await runScrapingValidation(mainWindow);
     
     // Handle user action requirements
     let finalCheckResults = checkResults;
@@ -665,19 +704,19 @@ ipcMain.handle('start-unified-auth', async () => {
       }
       
       // Re-run checks after user action
-      logToRenderer('Re-running pre-scraping checks after user action...', 'info');
-      finalCheckResults = await runPreScrapingChecks(mainWindow);
+      logToRenderer('Re-running scraping validation after user action...', 'info');
+      finalCheckResults = await runScrapingValidation(mainWindow);
       if (!finalCheckResults.success) {
-        return { success: false, error: 'Pre-scraping checks still failing after user action' };
+        return { success: false, error: 'Scraping validation still failing after user action' };
       }
     }
     
     if (!finalCheckResults.success) {
-      return { success: false, error: 'Pre-scraping checks failed - cannot proceed with scraping' };
+      return { success: false, error: 'Scraping validation failed - cannot proceed with scraping' };
     }
     
-    // Switch to scraping view after successful pre-scraping checks
-    logToRenderer('Pre-scraping checks completed successfully - switching to scraping view', 'info');
+    // Switch to scraping view after successful scraping validation
+    logToRenderer('Scraping validation completed successfully - switching to scraping view', 'info');
     mainWindow.webContents.send('switch-to-view', 'scraping');
     
     logToRenderer('=== STARTING SCRAPING WORKFLOWS ===', 'info');
@@ -698,10 +737,48 @@ ipcMain.handle('start-unified-auth', async () => {
     const google0Result = await runGoogleWorkflow0();
     results.push({ type: 'google0', result: google0Result });
     
+    // Check for authentication failure in /u/0
+    if (google0Result.needsAuth) {
+      logToRenderer('Google /u/0 authentication failed - waiting for user to authenticate', 'warn');
+      const { waitForAuthentication } = require('access/google-access');
+      await waitForAuthentication(browserView, 'nycstudents');
+      
+      // Retry /u/0 scraping after authentication
+      logToRenderer('Retrying Google /u/0 scraping after authentication...', 'info');
+      const retryGoogle0Result = await runGoogleWorkflow0();
+      
+      // Replace the failed result with the successful retry result
+      const google0Index = results.findIndex(r => r.type === 'google0');
+      if (google0Index !== -1) {
+        results[google0Index] = { type: 'google0', result: retryGoogle0Result };
+      } else {
+        results.push({ type: 'google0', result: retryGoogle0Result });
+      }
+    }
+    
     // Run Google /u/1 workflow  
     logToRenderer('Running Google /u/1 workflow...', 'info');
     const google1Result = await runGoogleWorkflow1();
     results.push({ type: 'google1', result: google1Result });
+    
+    // Check for authentication failure in /u/1
+    if (google1Result.needsAuth) {
+      logToRenderer('Google /u/1 authentication failed - waiting for user to authenticate', 'warn');
+      const { waitForAuthentication } = require('access/google-access');
+      await waitForAuthentication(browserView, 'hsmse');
+      
+      // Retry /u/1 scraping after authentication
+      logToRenderer('Retrying Google /u/1 scraping after authentication...', 'info');
+      const retryGoogle1Result = await runGoogleWorkflow1();
+      
+      // Replace the failed result with the successful retry result
+      const google1Index = results.findIndex(r => r.type === 'google1');
+      if (google1Index !== -1) {
+        results[google1Index] = { type: 'google1', result: retryGoogle1Result };
+      } else {
+        results.push({ type: 'google1', result: retryGoogle1Result });
+      }
+    }
     
     // Run Jupiter workflow
     logToRenderer('Running Jupiter workflow...', 'info');
@@ -749,6 +826,161 @@ ipcMain.handle('save-jupiter-credentials', async (event, { student_name, passwor
     }
   } catch (error) {
     logToRenderer(`Failed to handle Jupiter credentials: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Handle renderer logs
+ipcMain.on('renderer-log', (event, logData) => {
+  // Forward to the main logger
+  logToRenderer(logData.message, logData.type);
+});
+
+// Settings window IPC handlers
+ipcMain.handle('open-settings', () => {
+  createSettingsWindow();
+});
+
+ipcMain.handle('get-jupiter-credentials', async () => {
+  try {
+    const fs = require('fs');
+    const { JUPITER_SECRET_PATH } = require('config/constants');
+    
+    if (fs.existsSync(JUPITER_SECRET_PATH)) {
+      const credentials = JSON.parse(fs.readFileSync(JUPITER_SECRET_PATH, 'utf8'));
+      return credentials;
+    }
+    return null;
+  } catch (error) {
+    logToRenderer(`Error loading Jupiter credentials: ${error.message}`, 'error');
+    return null;
+  }
+});
+
+ipcMain.handle('get-jupiter-config', async () => {
+  try {
+    const fs = require('fs');
+    const { JUPITER_CONFIG_PATH } = require('config/constants');
+    
+    if (fs.existsSync(JUPITER_CONFIG_PATH)) {
+      const config = JSON.parse(fs.readFileSync(JUPITER_CONFIG_PATH, 'utf8'));
+      return config;
+    }
+    return null;
+  } catch (error) {
+    logToRenderer(`Error loading Jupiter config: ${error.message}`, 'error');
+    return null;
+  }
+});
+
+ipcMain.handle('test-jupiter-login', async (event, credentials) => {
+  try {
+    // Step 1: Setup Jupiter browser
+    const setupResult = await setupJupiterBrowser();
+    if (!setupResult.success) {
+      return { success: false, error: setupResult.error };
+    }
+    
+    // Step 2: Attempt login (this will handle browser setup and navigation)
+    const { loginToJupiter } = require('access/jupiter-access');
+    const result = await loginToJupiter(browserView, credentials, mainWindow);
+    
+    if (result.success) {
+      logToRenderer('Login test successful!', 'success');
+    } else {
+      logToRenderer(`Login test failed: ${result.message}`, 'error');
+    }
+    
+    return result;
+  } catch (error) {
+    logToRenderer(`Error during test login: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('load-jupiter-classes', async () => {
+  try {
+    // Step 1: Setup Jupiter browser
+    const setupResult = await setupJupiterBrowser();
+    if (!setupResult.success) {
+      return { success: false, error: setupResult.error };
+    }
+    
+    // Step 2: Authenticate with Jupiter (same as in runJupiterWorkflow)
+    const accessResult = await handleJupiterAccess(browserView, mainWindow);
+    if (!accessResult.success) {
+      return { success: false, error: 'Jupiter authentication failed. Please check your credentials in Settings.' };
+    }
+    
+    // Step 2: Get available classes using the Jupiter scraper
+    const { getAvailableJupiterClasses } = require('scrapers/jupiter-scraper');
+    const classes = await getAvailableJupiterClasses(browserView);
+    
+    if (classes && classes.length > 0) {
+      logToRenderer(`Loaded ${classes.length} classes from Jupiter Ed`, 'success');
+      return { success: true, classes };
+    } else {
+      return { success: false, error: 'No classes found. Please check your login credentials.' };
+    }
+  } catch (error) {
+    logToRenderer(`Error loading Jupiter classes: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('save-jupiter-config', async (event, classes) => {
+  try {
+    const fs = require('fs');
+    const { JUPITER_CONFIG_PATH } = require('config/constants');
+    
+    // Add timestamp to the config
+    const config = {
+      ...classes,
+      last_updated: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(JUPITER_CONFIG_PATH, JSON.stringify(config, null, 2));
+    logToRenderer('Jupiter configuration saved successfully', 'info');
+    return { success: true };
+  } catch (error) {
+    logToRenderer(`Error saving Jupiter config: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('clear-google-cookies', async () => {
+  try {
+    if (!browserView || !browserView.webContents) {
+      logToRenderer('Browser view not available for clearing cookies', 'error');
+      return { success: false, error: 'Browser view not available' };
+    }
+    
+    logToRenderer('Clearing Google cookies and authentication data...', 'info');
+    
+    const session = browserView.webContents.session;
+    
+    // Clear all storage data for Google domains
+    await session.clearStorageData({
+      storages: ['cookies', 'localStorage', 'sessionStorage', 'indexeddb', 'websql', 'cachestorage'],
+      origins: ['https://accounts.google.com', 'https://classroom.google.com', 'https://google.com', 'https://www.google.com']
+    });
+    
+    // Clear all cookies for all domains (more comprehensive)
+    await session.clearStorageData({
+      storages: ['cookies']
+    });
+    
+    // Navigate to Google logout URL to ensure complete signout
+    await browserView.webContents.loadURL('https://accounts.google.com/logout');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for logout to complete
+    
+    // Navigate to a neutral page
+    await browserView.webContents.loadURL('https://classroom.google.com');
+    
+    logToRenderer('Google cookies and authentication data cleared successfully', 'success');
+    return { success: true };
+  } catch (error) {
+    logToRenderer(`Error clearing Google cookies: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });
@@ -804,9 +1036,8 @@ ipcMain.on('switch-tab', (event, tabName) => {
 
 // File operation IPC handlers for assignment tracker
 ipcMain.handle('get-assignments-file-path', () => {
-  const assignmentsPath = path.join(__dirname, 'data', 'all_assignments.json');
-  console.log(`[Main] Assignments file path requested: ${assignmentsPath}`);
-  return assignmentsPath;
+  console.log(`[Main] Assignments file path requested: ${ASSIGNMENTS_FILE}`);
+  return ASSIGNMENTS_FILE;
 });
 
 ipcMain.handle('file-exists', (event, filePath) => {
@@ -849,5 +1080,11 @@ ipcMain.handle('get-file-stats', (event, filePath) => {
 // Handle opening logs window
 ipcMain.handle('open-logs-window', () => {
   createLogsWindow();
+});
+
+// Handle getting log file path
+ipcMain.handle('get-log-file-path', () => {
+  const { LOG_FILE } = require('config/constants');
+  return LOG_FILE;
 });
 

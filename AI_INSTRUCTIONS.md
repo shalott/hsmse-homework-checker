@@ -1,5 +1,6 @@
 # AI Assistant Instructions for Homework Checker Project
 
+
 ## App Management Policy
 
 **DO NOT automatically start or kill the Electron app.**
@@ -7,15 +8,6 @@
 - **NO `npm start`** - The user will start the app manually when ready
 - **NO `pkill -f "electron ."`** - The user will stop the app manually when needed
 - **NO background process management** - Let the user control when to run tests
-
-## When User Wants to Test Changes
-
-Instead of running the app automatically:
-
-1. **Inform the user** that changes have been made
-2. **Suggest** they can test by running `npm start` if they want to
-3. **Explain** what the changes should accomplish
-4. **Let them decide** when and how to test
 
 ## Appropriate Actions
 
@@ -34,9 +26,6 @@ Instead of running the app automatically:
 - Run background processes without explicit user request
 - Assume the user wants immediate testing
 
-## Exception
-
-Only use `npm start` or process management if the user **explicitly requests** it in their message (e.g., "please start the app" or "kill the current process").
 
 ## Code Standards and Best Practices
 

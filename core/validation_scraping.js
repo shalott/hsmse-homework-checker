@@ -1,8 +1,8 @@
-// Pre-scraping validation system
+// Scraping validation system
 // Ensures all requirements are met before starting any scraping operations
 
 const fs = require('fs');
-const { logToRenderer } = require('core/logger');
+const { logToRenderer } = require('./logger');
 const { JUPITER_SECRET_PATH, JUPITER_CONFIG_PATH } = require('config/constants');
 
 /**
@@ -10,13 +10,12 @@ const { JUPITER_SECRET_PATH, JUPITER_CONFIG_PATH } = require('config/constants')
  * @param {Object} mainWindow - Main window for showing UI elements
  * @returns {Promise<Object>} - Check results with any required actions
  */
-async function runPreScrapingChecks(mainWindow) {
-  logToRenderer('Running pre-scraping checks...', 'info');
+async function runScrapingValidation(mainWindow) {
+  logToRenderer('Running scraping validation...', 'info');
   
   const checks = [
     { name: 'Jupiter Credentials', check: checkJupiterCredentials, critical: true },
-    { name: 'Jupiter Configuration', check: checkJupiterConfiguration, critical: false },
-    { name: 'Data Directories', check: checkDataDirectories, critical: true }
+    { name: 'Jupiter Configuration', check: checkJupiterConfiguration, critical: false }
   ];
   
   const results = {
@@ -72,7 +71,7 @@ async function runPreScrapingChecks(mainWindow) {
   }
   
   if (results.success && !results.requiresUserAction) {
-    logToRenderer('All pre-scraping checks passed!', 'success');
+    logToRenderer('All scraping validation checks passed!', 'success');
   }
   
   return results;
@@ -127,47 +126,43 @@ async function checkJupiterConfiguration(mainWindow) {
     await fs.promises.access(JUPITER_CONFIG_PATH);
     const config = JSON.parse(await fs.promises.readFile(JUPITER_CONFIG_PATH, 'utf8'));
     
-    if (!config.selected_classes || Object.keys(config.selected_classes).length === 0) {
+    logToRenderer(`[Jupiter] Checking configuration: ${JSON.stringify(config)}`, 'info');
+    
+    // Filter out metadata fields and get only class selections
+    const classSelections = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (key !== 'last_updated' && (value === 'selected' || value === 'unselected')) {
+        classSelections[key] = value;
+      }
+    }
+    
+    logToRenderer(`[Jupiter] Found ${Object.keys(classSelections).length} class selections`, 'info');
+    
+    if (Object.keys(classSelections).length === 0) {
+      logToRenderer('[Jupiter] No class selections found - will prompt for class selection', 'warn');
       return {
         success: false,
-        message: 'No Jupiter classes selected for scraping'
+        message: 'No Jupiter classes found in configuration',
+        requiresUserAction: true,
+        actionType: 'jupiter-class-selection'
       };
     }
     
-    const classCount = Object.keys(config.selected_classes).length;
+    const selectedCount = Object.values(classSelections).filter(status => status === 'selected').length;
+    logToRenderer(`[Jupiter] Configuration valid: ${selectedCount} selected classes out of ${Object.keys(classSelections).length} total classes`, 'success');
+    
+    // Configuration is valid as long as it exists - even if no classes are selected, that's a user choice
     return {
       success: true,
-      message: `Jupiter configuration found with ${classCount} selected classes`
+      message: `Jupiter configuration found with ${selectedCount} selected classes out of ${Object.keys(classSelections).length} total classes`
     };
     
   } catch (error) {
     return {
       success: false,
-      message: 'Jupiter class configuration not found - will skip Jupiter scraping'
-    };
-  }
-}
-
-/**
- * Check if required data directories exist
- */
-async function checkDataDirectories(mainWindow) {
-  const dirs = ['data', 'data/temp', 'secrets'];
-  
-  try {
-    for (const dir of dirs) {
-      await fs.promises.mkdir(dir, { recursive: true });
-    }
-    
-    return {
-      success: true,
-      message: 'All required directories exist'
-    };
-    
-  } catch (error) {
-    return {
-      success: false,
-      message: `Failed to create required directories: ${error.message}`
+      message: 'Jupiter class configuration not found - will prompt for class selection',
+      requiresUserAction: true,
+      actionType: 'jupiter-class-selection'
     };
   }
 }
@@ -186,6 +181,14 @@ async function waitForUserAction(mainWindow, actionType) {
     
     // Wait for credentials to be created
     return await waitForJupiterCredentials();
+  } else if (actionType === 'jupiter-class-selection') {
+    // Show Jupiter class selection dialog
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('show-jupiter-class-selection');
+    }
+    
+    // Wait for class selection to be completed
+    return await waitForJupiterClassSelection();
   }
   
   return { success: false, message: `Unknown action type: ${actionType}` };
@@ -218,7 +221,44 @@ async function waitForJupiterCredentials() {
   return { success: false, message: 'Timeout waiting for Jupiter credentials' };
 }
 
+/**
+ * Wait for Jupiter class selection to be completed
+ */
+async function waitForJupiterClassSelection() {
+  const maxWaitTime = 300000; // 5 minutes
+  const pollInterval = 2000; // Check every 2 seconds
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      await fs.promises.access(JUPITER_CONFIG_PATH);
+      const config = JSON.parse(await fs.promises.readFile(JUPITER_CONFIG_PATH, 'utf8'));
+      
+      // Filter out metadata fields and get only class selections
+      const classSelections = {};
+      for (const [key, value] of Object.entries(config)) {
+        if (key !== 'last_updated' && (value === 'selected' || value === 'unselected')) {
+          classSelections[key] = value;
+        }
+      }
+      
+      if (Object.keys(classSelections).length > 0) {
+        logToRenderer('Jupiter class selection completed by user!', 'success');
+        return { success: true, message: 'Jupiter class selection completed' };
+      }
+    } catch (error) {
+      // File doesn't exist yet, keep waiting
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  
+  // Timeout - proceed with scraping all classes
+  logToRenderer('Timeout waiting for class selection - will scrape all available classes', 'warn');
+  return { success: true, message: 'Timeout - will scrape all classes' };
+}
+
 module.exports = {
-  runPreScrapingChecks,
+  runScrapingValidation,
   waitForUserAction
 };

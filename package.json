@@ -1,10 +1,10 @@
 {
-  "name": "homework_checker",
+  "name": "hsmse-hw",
   "version": "1.0.0",
   "description": "Desktop application for scraping homework assignments from Google Classroom and Jupiter Ed",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "electron-forge start",
     "dev": "NODE_ENV=development electron .",
     "postinstall": "electron-builder install-app-deps",
     "build": "electron-builder",
@@ -13,7 +13,9 @@
     "build:linux": "electron-builder --linux",
     "dist": "electron-builder --publish=never",
     "pack": "electron-builder --dir",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "keywords": [
     "homework",
@@ -26,83 +28,21 @@
   "author": "Naomi Novik",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^38.3.0",
-    "electron-builder": "^24.13.3"
-  },
-  "build": {
-    "appId": "com.naominovik.homework-checker",
-    "productName": "Homework Checker",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.js",
-      "main.html",
-      "main.css",
-      "access/**/*",
-      "config/**/*",
-      "core/**/*",
-      "scrapers/**/*",
-      "data/**/*",
-      "*.html.template",
-      "test_config.json",
-      "node_modules/**/*",
-      "!node_modules/.cache/**/*",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
-    ],
-    "extraResources": [
-      {
-        "from": "node_modules/puppeteer/.local-chromium",
-        "to": "chromium",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.education",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ]
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        }
-      ]
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+    "@electron-forge/cli": "^7.8.3",
+    "@electron-forge/maker-deb": "^7.10.2",
+    "@electron-forge/maker-dmg": "^7.10.2",
+    "@electron-forge/maker-rpm": "^7.10.2",
+    "@electron-forge/maker-squirrel": "^7.10.2",
+    "@electron-forge/maker-zip": "^7.10.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.10.2",
+    "@electron-forge/plugin-fuses": "^7.10.2",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^38.3.0"
   },
   "dependencies": {
     "app-module-path": "^2.2.0",
     "cheerio": "^1.1.2",
+    "electron-squirrel-startup": "^1.0.1",
     "fs-extra": "^11.3.2",
     "puppeteer": "^24.25.0"
   }

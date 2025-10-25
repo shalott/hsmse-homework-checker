@@ -2,7 +2,24 @@
 
 const fs = require('fs');
 const { logToRenderer } = require('core/logger');
-const { JUPITER_SECRET_PATH, SECRETS_DIR } = require('config/constants');
+const { JUPITER_SECRET_PATH, SECRETS_DIR, JUPITER_LOGIN_URL } = require('config/constants');
+
+/**
+ * Ensure browser view is ready for Jupiter operations
+ * @param {BrowserView} browserView - The Electron BrowserView instance
+ * @param {BrowserWindow} mainWindow - The main window instance
+ * @returns {Promise<boolean>} - True if browser view is ready
+ */
+async function ensureJupiterBrowserReady(browserView, mainWindow) {
+  if (!browserView || !browserView.webContents) {
+    throw new Error('Browser view is not available');
+  }
+  
+  // Navigate to Jupiter login page
+  await browserView.webContents.loadURL(JUPITER_LOGIN_URL);
+  
+  return true;
+}
 
 /**
  * Check if Jupiter Ed credentials exist
@@ -31,7 +48,7 @@ async function saveJupiterCredentials(credentials) {
   logToRenderer('Received Jupiter credentials. Saving...', 'info');
   
   try {
-    await fs.promises.mkdir(SECRETS_DIR, { recursive: true });
+    // SECRETS_DIR should already exist from pre-scraping checks
     await fs.promises.writeFile(JUPITER_SECRET_PATH, JSON.stringify(credentials), 'utf8');
     logToRenderer('Jupiter credentials saved successfully.', 'success');
     return { success: true, credentials };
@@ -47,13 +64,13 @@ async function saveJupiterCredentials(credentials) {
  * @param {Object} credentials - The login credentials
  * @returns {Promise<Object>} - Login success status
  */
-async function loginToJupiter(browserView, credentials) {
-  const JUPITER_LOGIN_URL = 'https://login.jupitered.com/login/index.php?89583';
+async function loginToJupiter(browserView, credentials, mainWindow) {
   logToRenderer('[Jupiter] --- Starting Login ---', 'info');
   logToRenderer(`[Jupiter] Received credentials object: ${JSON.stringify(credentials)}`, 'info');
 
   try {
-    await browserView.webContents.loadURL(JUPITER_LOGIN_URL);
+    // Ensure browser view is ready and navigate to login page
+    await ensureJupiterBrowserReady(browserView, mainWindow);
     
     // Wrap the entire login process in a Promise to make it awaitable
     return new Promise((resolve, reject) => {
@@ -212,5 +229,6 @@ module.exports = {
   checkJupiterCredentials,
   saveJupiterCredentials,
   loginToJupiter,
-  handleJupiterAccess
+  handleJupiterAccess,
+  ensureJupiterBrowserReady
 };

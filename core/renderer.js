@@ -1,8 +1,14 @@
 // HSMSE Homework Checker - Main Application JavaScript
 
 const { ipcRenderer } = require('electron');
-const { logToRenderer } = require('./core/logger');
 const AssignmentTracker = require('./core/assignment-tracker');
+
+// Simple logging function for renderer process
+function logToRenderer(message, type = 'info') {
+  console.log(`[${type.toUpperCase()}] ${message}`);
+  // Also send to main process for centralized logging
+  ipcRenderer.send('renderer-log', { message, type, timestamp: new Date().toLocaleTimeString() });
+}
 
 // Application state
 const AppState = {
@@ -25,6 +31,7 @@ function initializeApp() {
   elements = {
     // Main controls
     updateAssignmentsBtn: document.getElementById('update-assignments'),
+    openSettingsBtn: document.getElementById('open-settings'),
     
     // View toggle controls
     assignmentsViewToggle: document.getElementById('assignments-view-toggle'),
@@ -51,6 +58,14 @@ function initializeApp() {
     suspiciousResultsList: document.getElementById('suspicious-results-list'),
     confirmSuspiciousBtn: document.getElementById('confirm-suspicious-btn'),
     rejectSuspiciousBtn: document.getElementById('reject-suspicious-btn'),
+
+    // Jupiter Class Selection Dialog
+    jupiterClassSelectionDialog: document.getElementById('jupiter-class-selection-dialog'),
+    jupiterClassesList: document.getElementById('jupiter-classes-list'),
+    selectAllJupiterClassesBtn: document.getElementById('select-all-jupiter-classes'),
+    deselectAllJupiterClassesBtn: document.getElementById('deselect-all-jupiter-classes'),
+    confirmJupiterClassesBtn: document.getElementById('confirm-jupiter-classes'),
+    skipJupiterClassesBtn: document.getElementById('skip-jupiter-classes'),
 
     // Status and logs
     logContainer: document.getElementById('log-container'),
@@ -87,6 +102,7 @@ function initializeApp() {
 function setupEventListeners() {
   // Main control buttons
   elements.updateAssignmentsBtn.addEventListener('click', handleUpdateAssignments);
+  elements.openSettingsBtn.addEventListener('click', handleOpenSettings);
   
   // View toggle controls
   elements.assignmentsViewToggle.addEventListener('change', handleViewToggle);
@@ -101,6 +117,12 @@ function setupEventListeners() {
   // Suspicious results dialog
   elements.confirmSuspiciousBtn.addEventListener('click', handleConfirmSuspiciousResults);
   elements.rejectSuspiciousBtn.addEventListener('click', handleRejectSuspiciousResults);
+
+  // Jupiter class selection dialog
+  elements.selectAllJupiterClassesBtn.addEventListener('click', handleSelectAllJupiterClasses);
+  elements.deselectAllJupiterClassesBtn.addEventListener('click', handleDeselectAllJupiterClasses);
+  elements.confirmJupiterClassesBtn.addEventListener('click', handleConfirmJupiterClasses);
+  elements.skipJupiterClassesBtn.addEventListener('click', handleSkipJupiterClasses);
 
   // IPC listeners
   setupIpcListeners();
@@ -147,6 +169,11 @@ function setupIpcListeners() {
   // Listen for Jupiter login form requests
   ipcRenderer.on('show-jupiter-form', () => {
     showJupiterLoginForm();
+  });
+
+  // Listen for Jupiter class selection dialog requests
+  ipcRenderer.on('show-jupiter-class-selection', () => {
+    showJupiterClassSelectionDialog();
   });
 
   // Listen for suspicious results dialog requests
@@ -213,6 +240,11 @@ function handleViewToggle() {
 // Handle opening logs window
 function handleOpenLogs() {
   ipcRenderer.invoke('open-logs-window');
+}
+
+// Handle opening settings window
+function handleOpenSettings() {
+  ipcRenderer.invoke('open-settings');
 }
 
 // Toggle logs pane expanded/collapsed
@@ -306,6 +338,30 @@ function showSuspiciousResultsDialog(anomalies) {
 
   elements.suspiciousResultsList.innerHTML = listHtml;
   elements.suspiciousResultsDialog.classList.add('active');
+}
+
+// Show the Jupiter class selection dialog
+function showJupiterClassSelectionDialog() {
+  // For now, show a simple dialog with mock classes
+  // In a real implementation, this would fetch classes from Jupiter
+  const mockClasses = [
+    { id: 'math101', name: 'Mathematics 101' },
+    { id: 'science102', name: 'Science 102' },
+    { id: 'english103', name: 'English 103' },
+    { id: 'history104', name: 'History 104' }
+  ];
+
+  const classesHtml = mockClasses.map((classInfo, index) => {
+    return `
+      <div class="jupiter-class-item">
+        <input type="checkbox" id="jupiter-class-${index}" value="${classInfo.id}" checked>
+        <label for="jupiter-class-${index}">${classInfo.name}</label>
+      </div>
+    `;
+  }).join('');
+
+  elements.jupiterClassesList.innerHTML = classesHtml;
+  elements.jupiterClassSelectionDialog.style.display = 'flex';
 }
 
 // Handle confirming suspicious results (use new data)
@@ -406,6 +462,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Export for testing (if needed)
 if (typeof module !== 'undefined' && module.exports) {
+// Jupiter Class Selection Handlers
+function handleSelectAllJupiterClasses() {
+  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]');
+  checkboxes.forEach(checkbox => checkbox.checked = true);
+}
+
+function handleDeselectAllJupiterClasses() {
+  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]');
+  checkboxes.forEach(checkbox => checkbox.checked = false);
+}
+
+function handleConfirmJupiterClasses() {
+  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]:checked');
+  const selectedClasses = {};
+  
+  checkboxes.forEach(checkbox => {
+    const label = elements.jupiterClassesList.querySelector(`label[for="${checkbox.id}"]`);
+    selectedClasses[checkbox.value] = {
+      name: label.textContent,
+      selected: true
+    };
+  });
+
+  // Save the configuration
+  ipcRenderer.invoke('save-jupiter-config', { selected_classes: selectedClasses })
+    .then(result => {
+      if (result.success) {
+        elements.jupiterClassSelectionDialog.style.display = 'none';
+        logToRenderer(`Jupiter class selection saved: ${Object.keys(selectedClasses).length} classes selected`, 'success');
+      } else {
+        logToRenderer(`Error saving Jupiter class selection: ${result.error}`, 'error');
+      }
+    })
+    .catch(error => {
+      logToRenderer(`Error saving Jupiter class selection: ${error.message}`, 'error');
+    });
+}
+
+function handleSkipJupiterClasses() {
+  // Skip class selection - will scrape all classes
+  elements.jupiterClassSelectionDialog.style.display = 'none';
+  logToRenderer('Skipping Jupiter class selection - will scrape all available classes', 'info');
+}
+
   module.exports = {
     AppState,
     initializeApp,

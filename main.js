@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 
 // STEP 1: Load constants FIRST (before anything else)
-const { BROWSER_VIEW_BOUNDS, ASSIGNMENTS_FILE, JUPITER_LOGIN_URL } = require('config/constants');
+const { BROWSER_VIEW_BOUNDS, ASSIGNMENTS_FILE, APP_SETTINGS_FILE, JUPITER_LOGIN_URL } = require('config/constants');
 
 // STEP 2: Import startup validation (but don't run it yet)
 const { runStartupValidation } = require('core/validation_startup');
@@ -26,7 +26,7 @@ const { saveAssignments } = require('scrapers/assignment-utils');
 
 // Import validation modules
 const AssignmentBackup = require('core/assignment-backup');
-const { runScrapingValidation, waitForUserAction } = require('core/validation_scraping');
+const { runScrapingValidation } = require('core/validation_scraping');
 
 // Initialize backup system
 const backupSystem = new AssignmentBackup();
@@ -35,6 +35,7 @@ const backupSystem = new AssignmentBackup();
 let mainWindow;
 let settingsWindow;
 let browserView; // Single browser view for all scraping operations
+let isScrapingCanceled = false;
 
 function createWindow() {
   // Create the browser window
@@ -183,7 +184,10 @@ async function alertUser(title, message) {
       type: 'warning',
       title: title,
       message: message,
-      buttons: ['OK']
+      detail: 'Please read the message above carefully before proceeding.',
+      buttons: ['OK'],
+      defaultId: 0,
+      cancelId: 0
     }).then(() => {
       resolve();
     });
@@ -562,10 +566,10 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
     // Step 3: Check for any failures and alert user if needed
     logToRenderer(`Checking results: Google0=${!!google0Result?.success}, Google1=${!!google1Result?.success}, Jupiter=${!!jupiterResult?.success}, Sheets=${!!sheetsResult?.success}`, 'info');
     
-    const anyFailures = (!google0Result || !google0Result.success) ||
-                       (!google1Result || !google1Result.success) ||
+    const anyFailures = (!google0Result || (!google0Result.success && !google0Result.skipped)) ||
+                       (!google1Result || (!google1Result.success && !google1Result.skipped)) ||
                        (!jupiterResult || !jupiterResult.success) ||
-                       (sheetsResult && !sheetsResult.success);
+                       (sheetsResult && !sheetsResult.success && !sheetsResult.skipped);
     
     if (anyFailures) {
       logToRenderer('Some scrapers failed - showing error alert', 'error');
@@ -688,31 +692,59 @@ ipcMain.handle('switch-to-view', async (event, viewName) => {
 ipcMain.handle('start-unified-auth', async () => {
   logToRenderer('Starting assignment update process...', 'info');
   
+  // Reset cancel flag at start of scraping
+  isScrapingCanceled = false;
+  
   try {
+    // Load app settings first
+    const appSettings = await getAppSettings();
+    logToRenderer(`App settings loaded: NYC Students=${appSettings.scrape_nyc_students_google}, HSMSE=${appSettings.scrape_hsmse_google}, Geometry=${appSettings.scrape_geometry_calendar}, Jupiter=${appSettings.scrape_jupiter}`, 'info');
+    
     // Step 1: Run scraping validation checks
     logToRenderer('=== SCRAPING VALIDATION CHECKS ===', 'info');
-    const checkResults = await runScrapingValidation(mainWindow);
+    const checkResults = await runScrapingValidation(mainWindow, appSettings);
     
-    // Handle user action requirements
-    let finalCheckResults = checkResults;
+    // Handle user action requirements - just open settings and stop
     if (checkResults.requiresUserAction) {
       logToRenderer(`Pre-scraping check requires user action: ${checkResults.userActionType}`, 'instruction');
-      const actionResult = await waitForUserAction(mainWindow, checkResults.userActionType);
       
-      if (!actionResult.success) {
-        return { success: false, error: `User action failed: ${actionResult.message}` };
+      // Show alert dialog
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Jupiter Ed Configuration Required',
+        message: 'We need your Jupiter Ed settings first!',
+        detail: 'Please configure your Jupiter Ed credentials and class selection in the settings window that will open. This is required before the app can scrape your assignments.',
+        buttons: ['Open Settings'],
+        defaultId: 0
+      });
+      
+      // Open settings window and stop here
+      if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('open-settings');
+        
+        // Wait a moment for settings window to open, then send scroll instruction
+        setTimeout(() => {
+          if (settingsWindow && settingsWindow.webContents) {
+            if (checkResults.userActionType === 'jupiter-login') {
+              settingsWindow.webContents.send('scroll-to-jupiter-credentials');
+            } else if (checkResults.userActionType === 'jupiter-class-selection') {
+              settingsWindow.webContents.send('scroll-to-jupiter-classes');
+            }
+          }
+        }, 500); // Small delay to ensure settings window is ready
       }
       
-      // Re-run checks after user action
-      logToRenderer('Re-running scraping validation after user action...', 'info');
-      finalCheckResults = await runScrapingValidation(mainWindow);
-      if (!finalCheckResults.success) {
-        return { success: false, error: 'Scraping validation still failing after user action' };
-      }
+      return { success: false, error: `Please configure your settings: ${checkResults.message}` };
     }
     
-    if (!finalCheckResults.success) {
-      return { success: false, error: 'Scraping validation failed - cannot proceed with scraping' };
+    if (!checkResults.success) {
+      return { success: false, error: checkResults.message };
+    }
+    
+    // Check if canceled before starting workflows
+    if (isScrapingCanceled) {
+      logToRenderer('Assignment update canceled by user', 'info');
+      return { success: false, error: 'Assignment Update Canceled' };
     }
     
     // Switch to scraping view after successful scraping validation
@@ -729,16 +761,31 @@ ipcMain.handle('start-unified-auth', async () => {
     // Show browser view initially
     setActiveBrowserView('main');
     
+    
     // Run all workflows sequentially (not in parallel)
     const results = [];
+    let google0Result;
+    let google1Result;
  
-    // Run Google /u/0 workflow
-    logToRenderer('Running Google /u/0 workflow...', 'info');
-    const google0Result = await runGoogleWorkflow0();
-    results.push({ type: 'google0', result: google0Result });
+    // Run Google /u/0 workflow (if enabled)
+    if (appSettings.scrape_nyc_students_google) {
+      // Check if canceled before Google /u/0
+      if (isScrapingCanceled) {
+        logToRenderer('Assignment update canceled by user', 'info');
+        return { success: false, error: 'Assignment Update Canceled' };
+      }
+      
+      logToRenderer('Running Google /u/0 workflow...', 'info');
+      google0Result = await runGoogleWorkflow0();
+      results.push({ type: 'google0', result: google0Result });
+    } else {
+      logToRenderer('Skipping Google /u/0 workflow (disabled in settings)', 'info');
+      google0Result = { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' };
+      results.push({ type: 'google0', result: google0Result });
+    }
     
-    // Check for authentication failure in /u/0
-    if (google0Result.needsAuth) {
+    // Check for authentication failure in /u/0 (only if workflow was executed)
+    if (appSettings.scrape_nyc_students_google && google0Result.needsAuth) {
       logToRenderer('Google /u/0 authentication failed - waiting for user to authenticate', 'warn');
       const { waitForAuthentication } = require('access/google-access');
       await waitForAuthentication(browserView, 'nycstudents');
@@ -756,39 +803,73 @@ ipcMain.handle('start-unified-auth', async () => {
       }
     }
     
-    // Run Google /u/1 workflow  
-    logToRenderer('Running Google /u/1 workflow...', 'info');
-    const google1Result = await runGoogleWorkflow1();
-    results.push({ type: 'google1', result: google1Result });
-    
-    // Check for authentication failure in /u/1
-    if (google1Result.needsAuth) {
-      logToRenderer('Google /u/1 authentication failed - waiting for user to authenticate', 'warn');
-      const { waitForAuthentication } = require('access/google-access');
-      await waitForAuthentication(browserView, 'hsmse');
-      
-      // Retry /u/1 scraping after authentication
-      logToRenderer('Retrying Google /u/1 scraping after authentication...', 'info');
-      const retryGoogle1Result = await runGoogleWorkflow1();
-      
-      // Replace the failed result with the successful retry result
-      const google1Index = results.findIndex(r => r.type === 'google1');
-      if (google1Index !== -1) {
-        results[google1Index] = { type: 'google1', result: retryGoogle1Result };
-      } else {
-        results.push({ type: 'google1', result: retryGoogle1Result });
+    // Run Google /u/1 workflow (if enabled)
+    if (appSettings.scrape_hsmse_google) {
+      // Check if canceled before Google /u/1
+      if (isScrapingCanceled) {
+        logToRenderer('Assignment update canceled by user', 'info');
+        return { success: false, error: 'Assignment Update Canceled' };
       }
+      
+      logToRenderer('Running Google /u/1 workflow...', 'info');
+      google1Result = await runGoogleWorkflow1();
+      results.push({ type: 'google1', result: google1Result });
+      
+      // Check for authentication failure in /u/1
+      if (google1Result.needsAuth) {
+        logToRenderer('Google /u/1 authentication failed - waiting for user to authenticate', 'warn');
+        const { waitForAuthentication } = require('access/google-access');
+        await waitForAuthentication(browserView, 'hsmse');
+        
+        // Retry /u/1 scraping after authentication
+        logToRenderer('Retrying Google /u/1 scraping after authentication...', 'info');
+        const retryGoogle1Result = await runGoogleWorkflow1();
+        
+        // Replace the failed result with the successful retry result
+        const google1Index = results.findIndex(r => r.type === 'google1');
+        if (google1Index !== -1) {
+          results[google1Index] = { type: 'google1', result: retryGoogle1Result };
+        } else {
+          results.push({ type: 'google1', result: retryGoogle1Result });
+        }
+      }
+    } else {
+      logToRenderer('Skipping Google /u/1 workflow (disabled in settings)', 'info');
+      google1Result = { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' };
+      results.push({ type: 'google1', result: google1Result });
     }
     
-    // Run Jupiter workflow
-    logToRenderer('Running Jupiter workflow...', 'info');
-    const jupiterResult = await runJupiterWorkflow();
-    results.push({ type: 'jupiter', result: jupiterResult });
+    // Run Jupiter workflow (if enabled)
+    if (appSettings.scrape_jupiter) {
+      // Check if canceled before Jupiter
+      if (isScrapingCanceled) {
+        logToRenderer('Assignment update canceled by user', 'info');
+        return { success: false, error: 'Assignment Update Canceled' };
+      }
+      
+      logToRenderer('Running Jupiter workflow...', 'info');
+      const jupiterResult = await runJupiterWorkflow();
+      results.push({ type: 'jupiter', result: jupiterResult });
+    } else {
+      logToRenderer('Skipping Jupiter workflow (disabled in settings)', 'info');
+      results.push({ type: 'jupiter', result: { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' } });
+    }
     
-    // Run Google Sheets workflow
-    logToRenderer('Running Google Sheets workflow...', 'info');
-    const sheetsResult = await runGoogleSheetsWorkflow();
-    results.push({ type: 'sheets', result: sheetsResult });
+    // Run Google Sheets workflow (if enabled)
+    if (appSettings.scrape_geometry_calendar) {
+      // Check if canceled before Google Sheets
+      if (isScrapingCanceled) {
+        logToRenderer('Assignment update canceled by user', 'info');
+        return { success: false, error: 'Assignment Update Canceled' };
+      }
+      
+      logToRenderer('Running Google Sheets workflow...', 'info');
+      const sheetsResult = await runGoogleSheetsWorkflow();
+      results.push({ type: 'sheets', result: sheetsResult });
+    } else {
+      logToRenderer('Skipping Google Sheets workflow (disabled in settings)', 'info');
+      results.push({ type: 'sheets', result: { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' } });
+    }
     
     // Extract results from our sequential execution
     const finalGoogle0Result = results.find(r => r.type === 'google0').result;
@@ -811,6 +892,12 @@ ipcMain.handle('start-unified-auth', async () => {
     await alertUser('Workflow Error', `An error occurred in the integrated workflow: ${error.message}`);
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('cancel-scraping', async () => {
+  logToRenderer('Assignment update canceled by user', 'info');
+  isScrapingCanceled = true;
+  return { success: true };
 });
 
 ipcMain.handle('save-jupiter-credentials', async (event, { student_name, password, loginType }) => {
@@ -887,6 +974,31 @@ ipcMain.handle('test-jupiter-login', async (event, credentials) => {
     
     if (result.success) {
       logToRenderer('Login test successful!', 'success');
+      
+      // Check if Jupiter config exists, if not, automatically load classes
+      const fs = require('fs');
+      const { JUPITER_CONFIG_PATH } = require('config/constants');
+      
+      if (!fs.existsSync(JUPITER_CONFIG_PATH)) {
+        logToRenderer('No Jupiter class configuration found - automatically loading classes...', 'info');
+        
+        // Auto-load classes
+        const { getAvailableJupiterClasses } = require('scrapers/jupiter-scraper');
+        const { handleJupiterAccess } = require('access/jupiter-access');
+        
+        try {
+          await handleJupiterAccess(browserView, mainWindow);
+          const classesResult = await getAvailableJupiterClasses(browserView);
+          
+          if (classesResult.success) {
+            logToRenderer('Classes loaded automatically!', 'success');
+          } else {
+            logToRenderer(`Auto-load classes failed: ${classesResult.error}`, 'error');
+          }
+        } catch (autoLoadError) {
+          logToRenderer(`Auto-load classes error: ${autoLoadError.message}`, 'error');
+        }
+      }
     } else {
       logToRenderer(`Login test failed: ${result.message}`, 'error');
     }
@@ -948,6 +1060,25 @@ ipcMain.handle('save-jupiter-config', async (event, classes) => {
   }
 });
 
+ipcMain.handle('delete-jupiter-credentials', async () => {
+  try {
+    const fs = require('fs');
+    const { JUPITER_SECRET_PATH } = require('config/constants');
+    
+    if (fs.existsSync(JUPITER_SECRET_PATH)) {
+      fs.unlinkSync(JUPITER_SECRET_PATH);
+      logToRenderer('Jupiter credentials deleted successfully', 'info');
+      return { success: true };
+    } else {
+      logToRenderer('No Jupiter credentials file found to delete', 'info');
+      return { success: true };
+    }
+  } catch (error) {
+    logToRenderer(`Error deleting Jupiter credentials: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('clear-google-cookies', async () => {
   try {
     if (!browserView || !browserView.webContents) {
@@ -981,6 +1112,72 @@ ipcMain.handle('clear-google-cookies', async () => {
     return { success: true };
   } catch (error) {
     logToRenderer(`Error clearing Google cookies: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Helper function to get app settings
+async function getAppSettings() {
+  try {
+    if (fs.existsSync(APP_SETTINGS_FILE)) {
+      const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf8'));
+      return settings;
+    } else {
+      // Return default settings
+      return {
+        scrape_nyc_students_google: true,
+        scrape_hsmse_google: true,
+        scrape_geometry_calendar: true,
+        scrape_jupiter: true
+      };
+    }
+  } catch (error) {
+    logToRenderer(`Error loading app settings: ${error.message}`, 'error');
+    return {
+      scrape_nyc_students_google: true,
+      scrape_hsmse_google: true,
+      scrape_geometry_calendar: true
+    };
+  }
+}
+
+// App Settings IPC Handlers
+ipcMain.handle('get-app-settings', async () => {
+  try {
+    if (fs.existsSync(APP_SETTINGS_FILE)) {
+      const settings = JSON.parse(fs.readFileSync(APP_SETTINGS_FILE, 'utf8'));
+      return settings;
+    } else {
+      // Return default settings
+      return {
+        scrape_nyc_students_google: true,
+        scrape_hsmse_google: true,
+        scrape_geometry_calendar: true,
+        scrape_jupiter: true
+      };
+    }
+  } catch (error) {
+    logToRenderer(`Error loading app settings: ${error.message}`, 'error');
+    return {
+      scrape_nyc_students_google: true,
+      scrape_hsmse_google: true,
+      scrape_geometry_calendar: true
+    };
+  }
+});
+
+ipcMain.handle('save-app-settings', async (event, settings) => {
+  try {
+    const settingsWithTimestamp = {
+      ...settings,
+      last_updated: new Date().toISOString()
+    };
+    
+    await fs.promises.writeFile(APP_SETTINGS_FILE, JSON.stringify(settingsWithTimestamp, null, 2));
+    logToRenderer('App settings saved successfully', 'info');
+    return { success: true };
+  } catch (error) {
+    logToRenderer(`Error saving app settings: ${error.message}`, 'error');
     return { success: false, error: error.message };
   }
 });

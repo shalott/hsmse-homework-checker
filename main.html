@@ -113,19 +113,28 @@
 
             <!-- Upcoming Assignments List -->
             <div class="assignments-list-section">
-              <h3>All Upcoming Assignments</h3>
-              <div id="upcomingList" class="assignments-list">
-                <!-- Upcoming assignments list will be populated by JavaScript -->
+              <div class="assignments-header">
+                <h3>All Upcoming Assignments</h3>
+                <div class="sort-controls">
+                  <label for="sortBy">Sort by:</label>
+                  <select id="sortBy" class="sort-select">
+                    <option value="date">Date</option>
+                    <option value="class">Class</option>
+                  </select>
+                </div>
               </div>
+              <ol id="upcomingList" class="assignments-list">
+                <!-- Upcoming assignments list will be populated by JavaScript -->
+              </ol>
             </div>
           </section>
 
           <!-- Missing Assignments Section -->
           <section class="missing-section">
             <h2>Missing Assignments</h2>
-            <div id="missingList" class="assignments-list missing-assignments">
+            <ol id="missingList" class="assignments-list missing-assignments">
               <!-- Missing assignments will be populated by JavaScript -->
-            </div>
+            </ol>
           </section>
 
           <!-- Statistics Section -->
@@ -161,62 +170,9 @@
 
         <!-- Browser View (Hidden by default, shown during refresh) -->
         <div id="browser-view" class="browser-content hidden">
-          <!-- Instructions Panel -->
-          <section id="instructions-panel" class="instructions-panel">
-            <h3 class="instructions-title">Instructions</h3>
-            <p>
-              1. Click "Update Assignments" to log in and gather all assignments
-            </p>
-            <p>
-              2. The system will automatically authenticate and collect data
-              from both sources
-            </p>
-            <p>3. Check the Logs window to monitor progress and results</p>
-          </section>
 
           <!-- BrowserView will be positioned here by Electron -->
 
-          <!-- Jupiter Login Form (Initially Hidden) -->
-          <div id="jupiter-login-pane" class="jupiter-login-overlay">
-            <div class="jupiter-login-container">
-              <h3>Jupiter Ed Login</h3>
-              <p>
-                Please enter your Jupiter Ed credentials. They will be stored
-                securely on your local machine.
-              </p>
-              <form id="jupiter-form">
-                <div class="form-group">
-                  <label for="jupiter-student-name">Student Name</label>
-                  <input type="text" id="jupiter-student-name" required />
-                </div>
-                <div class="form-group">
-                  <label for="jupiter-password">Password</label>
-                  <input type="password" id="jupiter-password" required />
-                </div>
-                <div class="form-group-inline">
-                  <label>Login Type:</label>
-                  <div class="radio-group">
-                    <input
-                      type="radio"
-                      id="login-student"
-                      name="login-type"
-                      value="student"
-                      checked />
-                    <label for="login-student">Student</label>
-                    <input
-                      type="radio"
-                      id="login-parent"
-                      name="login-type"
-                      value="parent" />
-                    <label for="login-parent">Parent</label>
-                  </div>
-                </div>
-                <button type="submit" class="btn btn-primary">
-                  Save and Login
-                </button>
-              </form>
-            </div>
-          </div>
 
           <!-- Suspicious Results Confirmation Dialog (Initially Hidden) -->
           <div
@@ -244,46 +200,6 @@
             </div>
           </div>
 
-          <!-- Jupiter Class Selection Dialog (Initially Hidden) -->
-          <div id="jupiter-class-selection-dialog" class="jupiter-class-selection-overlay">
-            <div class="jupiter-class-selection-container">
-              <h3>Select Jupiter Ed Classes</h3>
-              <p>
-                Please select which classes you want to scrape from Jupiter Ed.
-                You can change this later in Settings.
-              </p>
-
-              <div id="jupiter-classes-list" class="jupiter-classes-list">
-                <!-- Dynamic content will be inserted here -->
-              </div>
-
-              <div class="jupiter-class-selection-actions">
-                <button id="select-all-jupiter-classes" class="btn btn-secondary">
-                  Select All
-                </button>
-                <button id="deselect-all-jupiter-classes" class="btn btn-secondary">
-                  Deselect All
-                </button>
-                <button id="confirm-jupiter-classes" class="btn btn-primary">
-                  Confirm Selection
-                </button>
-                <button id="skip-jupiter-classes" class="btn btn-secondary">
-                  Skip (Scrape All)
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Logs Pane at Bottom -->
-        <div class="logs-pane">
-          <div class="logs-header">
-            <h4>Activity Logs</h4>
-            <button id="toggle-logs" class="logs-toggle">−</button>
-          </div>
-          <div id="log-container" class="log-container">
-            <!-- Log entries will be added here dynamically -->
-          </div>
         </div>
 
         <!-- Templates for dynamic content -->

@@ -8,15 +8,23 @@ const { JUPITER_SECRET_PATH, JUPITER_CONFIG_PATH } = require('config/constants')
 /**
  * Run all pre-scraping checks
  * @param {Object} mainWindow - Main window for showing UI elements
+ * @param {Object} appSettings - App settings to determine which checks to run
  * @returns {Promise<Object>} - Check results with any required actions
  */
-async function runScrapingValidation(mainWindow) {
+async function runScrapingValidation(mainWindow, appSettings) {
   logToRenderer('Running scraping validation...', 'info');
   
-  const checks = [
-    { name: 'Jupiter Credentials', check: checkJupiterCredentials, critical: true },
-    { name: 'Jupiter Configuration', check: checkJupiterConfiguration, critical: false }
-  ];
+  const checks = [];
+  
+  // Only check Jupiter if it's enabled in settings
+  if (appSettings && appSettings.scrape_jupiter) {
+    checks.push(
+      { name: 'Jupiter Credentials', check: checkJupiterCredentials, critical: true },
+      { name: 'Jupiter Configuration', check: checkJupiterConfiguration, critical: false }
+    );
+  } else {
+    logToRenderer('Jupiter scraping disabled in settings - skipping Jupiter validation', 'info');
+  }
   
   const results = {
     success: true,
@@ -89,7 +97,7 @@ async function checkJupiterCredentials(mainWindow) {
     if (!credentials.student_name || !credentials.password) {
       return {
         success: false,
-        message: 'Jupiter credentials file exists but is missing required fields',
+        message: 'Jupiter credentials incomplete - please enter your student name and password in Settings',
         requiresUserAction: true,
         actionType: 'jupiter-login'
       };
@@ -111,7 +119,7 @@ async function checkJupiterCredentials(mainWindow) {
   } catch (error) {
     return {
       success: false,
-      message: 'Jupiter credentials not found - please provide login information',
+      message: 'We need your Jupiter Ed settings first!',
       requiresUserAction: true,
       actionType: 'jupiter-login'
     };
@@ -142,7 +150,7 @@ async function checkJupiterConfiguration(mainWindow) {
       logToRenderer('[Jupiter] No class selections found - will prompt for class selection', 'warn');
       return {
         success: false,
-        message: 'No Jupiter classes found in configuration',
+        message: 'We need your Jupiter Ed settings first!',
         requiresUserAction: true,
         actionType: 'jupiter-class-selection'
       };
@@ -160,105 +168,14 @@ async function checkJupiterConfiguration(mainWindow) {
   } catch (error) {
     return {
       success: false,
-      message: 'Jupiter class configuration not found - will prompt for class selection',
+      message: 'We need your Jupiter Ed settings first!',
       requiresUserAction: true,
       actionType: 'jupiter-class-selection'
     };
   }
 }
 
-/**
- * Wait for user to complete required action and then re-run checks
- */
-async function waitForUserAction(mainWindow, actionType) {
-  logToRenderer(`Waiting for user to complete: ${actionType}`, 'info');
-  
-  if (actionType === 'jupiter-login') {
-    // Show Jupiter login form
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('show-jupiter-login');
-    }
-    
-    // Wait for credentials to be created
-    return await waitForJupiterCredentials();
-  } else if (actionType === 'jupiter-class-selection') {
-    // Show Jupiter class selection dialog
-    if (mainWindow && mainWindow.webContents) {
-      mainWindow.webContents.send('show-jupiter-class-selection');
-    }
-    
-    // Wait for class selection to be completed
-    return await waitForJupiterClassSelection();
-  }
-  
-  return { success: false, message: `Unknown action type: ${actionType}` };
-}
-
-/**
- * Wait for Jupiter credentials file to be created
- */
-async function waitForJupiterCredentials() {
-  const maxWaitTime = 300000; // 5 minutes
-  const pollInterval = 2000; // Check every 2 seconds
-  const startTime = Date.now();
-  
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      await fs.promises.access(JUPITER_SECRET_PATH);
-      const credentials = JSON.parse(await fs.promises.readFile(JUPITER_SECRET_PATH, 'utf8'));
-      
-      if (credentials.student_name && credentials.password) {
-        logToRenderer('Jupiter credentials provided by user!', 'success');
-        return { success: true, message: 'Jupiter credentials created' };
-      }
-    } catch (error) {
-      // File doesn't exist yet, keep waiting
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  return { success: false, message: 'Timeout waiting for Jupiter credentials' };
-}
-
-/**
- * Wait for Jupiter class selection to be completed
- */
-async function waitForJupiterClassSelection() {
-  const maxWaitTime = 300000; // 5 minutes
-  const pollInterval = 2000; // Check every 2 seconds
-  const startTime = Date.now();
-  
-  while (Date.now() - startTime < maxWaitTime) {
-    try {
-      await fs.promises.access(JUPITER_CONFIG_PATH);
-      const config = JSON.parse(await fs.promises.readFile(JUPITER_CONFIG_PATH, 'utf8'));
-      
-      // Filter out metadata fields and get only class selections
-      const classSelections = {};
-      for (const [key, value] of Object.entries(config)) {
-        if (key !== 'last_updated' && (value === 'selected' || value === 'unselected')) {
-          classSelections[key] = value;
-        }
-      }
-      
-      if (Object.keys(classSelections).length > 0) {
-        logToRenderer('Jupiter class selection completed by user!', 'success');
-        return { success: true, message: 'Jupiter class selection completed' };
-      }
-    } catch (error) {
-      // File doesn't exist yet, keep waiting
-    }
-    
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-  
-  // Timeout - proceed with scraping all classes
-  logToRenderer('Timeout waiting for class selection - will scrape all available classes', 'warn');
-  return { success: true, message: 'Timeout - will scrape all classes' };
-}
 
 module.exports = {
-  runScrapingValidation,
-  waitForUserAction
+  runScrapingValidation
 };

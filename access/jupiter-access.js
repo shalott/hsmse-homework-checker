@@ -112,7 +112,7 @@ async function loginToJupiter(browserView, credentials, mainWindow) {
       
       try {
         // Wait a moment for the tab to switch
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Enter the student name in the contenteditable div
         logToRenderer('Entering student name...', 'info');
@@ -184,12 +184,17 @@ async function loginToJupiter(browserView, credentials, mainWindow) {
         logToRenderer(`Login button click result: ${JSON.stringify(loginButtonResult)}`, loginButtonResult.success ? 'success' : 'error');
         
         if (loginButtonResult.success) {
-          logToRenderer('Login form submitted. Waiting for redirect...', 'info');
+          logToRenderer('Login form submitted.', 'info');
           // Wait for potential redirect
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          await new Promise(resolve => setTimeout(resolve, 500));
           
           const finalUrl = browserView.webContents.getURL();
           logToRenderer('Jupiter Ed login completed successfully!', 'success');
+          logToRenderer('Saving credentials...', 'info');
+          
+          // Auto-save credentials
+          await saveJupiterCredentials(credentials);
+          
           resolve({ success: true });
         } else {
           resolve({ success: false, error: 'Login button click failed' });

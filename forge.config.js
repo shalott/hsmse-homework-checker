@@ -6,43 +6,27 @@ module.exports = {
     icon: path.resolve(__dirname, 'icon/hsmse-hw-icon'), // no extension for cross-platform
     name: 'HSMSE HW',
     executableName: 'HSMSE HW',
-    ignore: (file) => {
-      // Normalize path for cross-platform and asar compatibility
-      const normalized = file.replace(/\\/g, '/');
-      // Always include the secrets/ and data/ directories and their subdirectories
-      if (
-        normalized === 'secrets' || normalized === '/secrets' ||
-        normalized === 'data' || normalized === '/data' ||
-        normalized.endsWith('/secrets') || normalized.endsWith('/data') ||
-        normalized.startsWith('secrets/') || normalized.startsWith('/secrets/') ||
-        normalized.startsWith('data/') || normalized.startsWith('/data/')
-      ) {
-        // Only ignore files inside, not the directories themselves
-        if (normalized.endsWith('.gitkeep')) return false;
-        // If it's a file (not a directory)
-        const path = require('path');
-        if (path.extname(normalized) || /\.[^/]+$/.test(normalized)) return true;
-        return false;
-      }
-      // Other ignore patterns
-      return [
-        /^old_python_tools\//,
-        /assignment_extraction\.log$/,
-        /\.log$/,
-        /chromedriver$/,
-        /geckodriver$/,
-        /^webdriver\//,
-        /^out\//,
-        /^dist-electron\//,
-        /^release\//,
-        /\.tmp$/,
-        /\.temp$/,
-        /^HSMSE Assignments\//,
-        /npm-debug\.log.*/,
-        /yarn-debug\.log.*/,
-        /yarn-error\.log.*/
-      ].some((re) => re.test(normalized));
-    },
+    ignore: [
+      /^secrets\//,
+      /^data\//,
+      /secrets\/jupiter_secret\.json$/,
+      /data\/.*\.json$/,
+      /^old_python_tools\//,
+      /assignment_extraction\.log$/,
+      /\.log$/,
+      /chromedriver$/,
+      /geckodriver$/,
+      /^webdriver\//,
+      /^out\//,
+      /^dist-electron\//,
+      /^release\//,
+      /\.tmp$/,
+      /\.temp$/,
+      /^HSMSE Assignments\//,
+      /npm-debug\.log.*/,
+      /yarn-debug\.log.*/,
+      /yarn-error\.log.*/
+    ],
   },
   makers: [
     {

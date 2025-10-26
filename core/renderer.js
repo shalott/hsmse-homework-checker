@@ -43,15 +43,8 @@ function initializeApp() {
     // View elements
     assignmentView: document.getElementById('assignment-view'),
     browserView: document.getElementById('browser-view'),
-    jupiterLoginPane: document.getElementById('jupiter-login-pane'),
-    instructionsPanel: document.getElementById('instructions-panel'),
     logsPane: document.querySelector('.logs-pane'),
     logsToggle: document.getElementById('toggle-logs'),
-    
-    // Jupiter Form
-    jupiterForm: document.getElementById('jupiter-form'),
-    jupiterStudentName: document.getElementById('jupiter-student-name'),
-    jupiterPassword: document.getElementById('jupiter-password'),
 
     // Suspicious Results Dialog
     suspiciousResultsDialog: document.getElementById('suspicious-results-dialog'),
@@ -60,12 +53,6 @@ function initializeApp() {
     rejectSuspiciousBtn: document.getElementById('reject-suspicious-btn'),
 
     // Jupiter Class Selection Dialog
-    jupiterClassSelectionDialog: document.getElementById('jupiter-class-selection-dialog'),
-    jupiterClassesList: document.getElementById('jupiter-classes-list'),
-    selectAllJupiterClassesBtn: document.getElementById('select-all-jupiter-classes'),
-    deselectAllJupiterClassesBtn: document.getElementById('deselect-all-jupiter-classes'),
-    confirmJupiterClassesBtn: document.getElementById('confirm-jupiter-classes'),
-    skipJupiterClassesBtn: document.getElementById('skip-jupiter-classes'),
 
     // Status and logs
     logContainer: document.getElementById('log-container'),
@@ -111,18 +98,17 @@ function setupEventListeners() {
   // Logs control
   elements.openLogsBtn.addEventListener('click', handleOpenLogs);
   
-  // Jupiter form submission
-  elements.jupiterForm.addEventListener('submit', handleJupiterFormSubmit);
 
   // Suspicious results dialog
   elements.confirmSuspiciousBtn.addEventListener('click', handleConfirmSuspiciousResults);
   elements.rejectSuspiciousBtn.addEventListener('click', handleRejectSuspiciousResults);
 
-  // Jupiter class selection dialog
-  elements.selectAllJupiterClassesBtn.addEventListener('click', handleSelectAllJupiterClasses);
-  elements.deselectAllJupiterClassesBtn.addEventListener('click', handleDeselectAllJupiterClasses);
-  elements.confirmJupiterClassesBtn.addEventListener('click', handleConfirmJupiterClasses);
-  elements.skipJupiterClassesBtn.addEventListener('click', handleSkipJupiterClasses);
+
+  // Sort control
+  const sortSelect = document.getElementById('sortBy');
+  if (sortSelect) {
+    sortSelect.addEventListener('change', handleSortChange);
+  }
 
   // IPC listeners
   setupIpcListeners();
@@ -140,10 +126,6 @@ function setupIpcListeners() {
     updateCurrentUrl(data.url);
   });
 
-  // Listen for instruction messages
-  ipcRenderer.on('instruction-message', (event, data) => {
-    updateInstructions(data.message);
-  });
 
   // Listen for workflow completion
   ipcRenderer.on('workflow-complete', (event, data) => {
@@ -155,6 +137,10 @@ function setupIpcListeners() {
   // Listen for automatic view switching after data save
   ipcRenderer.on('switch-to-assignments-view', () => {
     showAssignmentView();
+    // Refresh assignment data when switching to assignments view
+    if (assignmentTracker) {
+      assignmentTracker.refresh();
+    }
   });
 
   // Listen for view switching from main process
@@ -166,24 +152,15 @@ function setupIpcListeners() {
     }
   });
 
-  // Listen for Jupiter login form requests
-  ipcRenderer.on('show-jupiter-form', () => {
-    showJupiterLoginForm();
-  });
-
-  // Listen for Jupiter class selection dialog requests
-  ipcRenderer.on('show-jupiter-class-selection', () => {
-    showJupiterClassSelectionDialog();
-  });
 
   // Listen for suspicious results dialog requests
   ipcRenderer.on('show-suspicious-results-dialog', (event, anomalies) => {
     showSuspiciousResultsDialog(anomalies);
   });
 
-  // Listen for request to show Jupiter login
-  ipcRenderer.on('show-jupiter-login', () => {
-    showJupiterLoginForm();
+  // Listen for request to open settings window
+  ipcRenderer.on('open-settings', () => {
+    handleOpenSettings();
   });
 }
 
@@ -193,7 +170,14 @@ async function handleUpdateAssignments() {
     // Show browser view during data collection
     showBrowserView();
     
-    setButtonLoading(elements.updateAssignmentsBtn, true, 'Updating...');
+    // Change button to red "Cancel" during scraping
+    setButtonLoading(elements.updateAssignmentsBtn, true, 'Cancel');
+    elements.updateAssignmentsBtn.classList.add('btn-cancel');
+    
+    // Change the click handler to cancel during scraping
+    elements.updateAssignmentsBtn.removeEventListener('click', handleUpdateAssignments);
+    elements.updateAssignmentsBtn.addEventListener('click', handleCancelScraping);
+    
     const result = await ipcRenderer.invoke('start-unified-auth');
     
     if (result.success) {
@@ -205,7 +189,11 @@ async function handleUpdateAssignments() {
         addLogEntry(`Jupiter Ed: ${result.jupiterAssignments} assignments`, 'info');
       }
     } else {
-      addLogEntry(`Update failed: ${result.error}`, 'error');
+      if (result.error === 'Assignment Update Canceled') {
+        addLogEntry('Assignment Update Canceled', 'info');
+      } else {
+        addLogEntry(`Update failed: ${result.error}`, 'error');
+      }
     }
     
     // Refresh assignment display and conditionally return to assignment view
@@ -224,7 +212,24 @@ async function handleUpdateAssignments() {
     // Still return to assignment view on error
     showAssignmentView();
   } finally {
+    // Restore button to normal state
     setButtonLoading(elements.updateAssignmentsBtn, false, 'Update Assignments');
+    elements.updateAssignmentsBtn.classList.remove('btn-cancel');
+    
+    // Restore original click handler
+    elements.updateAssignmentsBtn.removeEventListener('click', handleCancelScraping);
+    elements.updateAssignmentsBtn.addEventListener('click', handleUpdateAssignments);
+  }
+}
+
+// Handle canceling the scraping process
+async function handleCancelScraping() {
+  try {
+    await ipcRenderer.invoke('cancel-scraping');
+    addLogEntry('Assignment update canceled by user', 'info');
+    showAssignmentView();
+  } catch (error) {
+    addLogEntry(`Error canceling update: ${error.message}`, 'error');
   }
 }
 
@@ -272,6 +277,11 @@ function showAssignmentView() {
   // Sync the toggle controls
   if (elements.assignmentsViewToggle) elements.assignmentsViewToggle.checked = true;
   
+  // Refresh assignment data when switching to assignments view
+  if (assignmentTracker) {
+    assignmentTracker.refresh();
+  }
+  
   ipcRenderer.send('switch-tab', 'assignments');
 }
 
@@ -286,37 +296,6 @@ function showBrowserView() {
   ipcRenderer.send('switch-tab', 'browser');
 }
 
-// Show the Jupiter login form
-function showJupiterLoginForm() {
-  // Make sure we're in browser view first
-  showBrowserView();
-  // Show the Jupiter login overlay
-  elements.jupiterLoginPane.classList.add('active');
-  // Also hide the browser view from the main process
-  ipcRenderer.send('switch-tab', 'jupiter-login');
-}
-
-// Handle Jupiter form submission
-function handleJupiterFormSubmit(event) {
-  event.preventDefault();
-  const studentName = elements.jupiterStudentName.value;
-  const password = elements.jupiterPassword.value;
-  const loginType = document.querySelector('input[name="login-type"]:checked').value;
-
-  if (studentName && password) {
-    addLogEntry('Sending Jupiter credentials to main process...', 'info');
-    ipcRenderer.invoke('save-jupiter-credentials', { 
-      student_name: studentName, 
-      password,
-      loginType
-    });
-    // Hide the form and return to assignment view
-    elements.jupiterLoginPane.classList.remove('active');
-    showAssignmentView();
-  } else {
-    addLogEntry('Student Name and password are required.', 'error');
-  }
-}
 
 // Show the suspicious results confirmation dialog
 function showSuspiciousResultsDialog(anomalies) {
@@ -340,29 +319,6 @@ function showSuspiciousResultsDialog(anomalies) {
   elements.suspiciousResultsDialog.classList.add('active');
 }
 
-// Show the Jupiter class selection dialog
-function showJupiterClassSelectionDialog() {
-  // For now, show a simple dialog with mock classes
-  // In a real implementation, this would fetch classes from Jupiter
-  const mockClasses = [
-    { id: 'math101', name: 'Mathematics 101' },
-    { id: 'science102', name: 'Science 102' },
-    { id: 'english103', name: 'English 103' },
-    { id: 'history104', name: 'History 104' }
-  ];
-
-  const classesHtml = mockClasses.map((classInfo, index) => {
-    return `
-      <div class="jupiter-class-item">
-        <input type="checkbox" id="jupiter-class-${index}" value="${classInfo.id}" checked>
-        <label for="jupiter-class-${index}">${classInfo.name}</label>
-      </div>
-    `;
-  }).join('');
-
-  elements.jupiterClassesList.innerHTML = classesHtml;
-  elements.jupiterClassSelectionDialog.style.display = 'flex';
-}
 
 // Handle confirming suspicious results (use new data)
 function handleConfirmSuspiciousResults() {
@@ -386,12 +342,6 @@ function handleRejectSuspiciousResults() {
   });
 }
 
-// Update the instructions panel
-function updateInstructions(message) {
-  if (elements.instructionsPanel) {
-    elements.instructionsPanel.textContent = message;
-  }
-}
 
 // Set button loading state
 function setButtonLoading(button, loading, loadingText = 'Loading...') {
@@ -462,49 +412,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Export for testing (if needed)
 if (typeof module !== 'undefined' && module.exports) {
-// Jupiter Class Selection Handlers
-function handleSelectAllJupiterClasses() {
-  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]');
-  checkboxes.forEach(checkbox => checkbox.checked = true);
-}
 
-function handleDeselectAllJupiterClasses() {
-  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]');
-  checkboxes.forEach(checkbox => checkbox.checked = false);
-}
-
-function handleConfirmJupiterClasses() {
-  const checkboxes = elements.jupiterClassesList.querySelectorAll('input[type="checkbox"]:checked');
-  const selectedClasses = {};
-  
-  checkboxes.forEach(checkbox => {
-    const label = elements.jupiterClassesList.querySelector(`label[for="${checkbox.id}"]`);
-    selectedClasses[checkbox.value] = {
-      name: label.textContent,
-      selected: true
-    };
-  });
-
-  // Save the configuration
-  ipcRenderer.invoke('save-jupiter-config', { selected_classes: selectedClasses })
-    .then(result => {
-      if (result.success) {
-        elements.jupiterClassSelectionDialog.style.display = 'none';
-        logToRenderer(`Jupiter class selection saved: ${Object.keys(selectedClasses).length} classes selected`, 'success');
-      } else {
-        logToRenderer(`Error saving Jupiter class selection: ${result.error}`, 'error');
-      }
-    })
-    .catch(error => {
-      logToRenderer(`Error saving Jupiter class selection: ${error.message}`, 'error');
-    });
-}
-
-function handleSkipJupiterClasses() {
-  // Skip class selection - will scrape all classes
-  elements.jupiterClassSelectionDialog.style.display = 'none';
-  logToRenderer('Skipping Jupiter class selection - will scrape all available classes', 'info');
-}
+  // Handle sort change
+  function handleSortChange() {
+    if (assignmentTracker) {
+      assignmentTracker.renderUpcomingAssignments();
+    }
+  }
 
   module.exports = {
     AppState,

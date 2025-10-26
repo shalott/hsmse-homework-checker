@@ -132,7 +132,7 @@ async function waitForPageLoad(browserView, timeout = 5000) {
     
     browserView.webContents.once('did-finish-load', () => {
       clearTimeout(timer);
-      setTimeout(resolve, 1500); // Extra wait for Jupiter's slow loading
+      setTimeout(resolve, 500); // Reduced wait for Jupiter's slow loading
     });
   });
 }

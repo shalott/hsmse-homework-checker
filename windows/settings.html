@@ -11,15 +11,52 @@
       <div class="settings-header">
         <button class="close-button" id="close-settings" title="Close Settings">&times;</button>
         <h1>Settings</h1>
-        <p>Configure Jupiter Ed credentials and class selection</p>
+        <p>Configure The Scraping Process</p>
       </div>
 
       <!-- Status Messages -->
       <div id="status-message" class="status-message hidden"></div>
 
+      <!-- Scraping Preferences Section -->
+      <div class="settings-section">
+        <h3>Scraping Preferences</h3>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="scrape-nyc-students-google" checked>
+            <span class="checkmark"></span>
+            Scrape NYC Students Google Classroom
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="scrape-hsmse-google" checked>
+            <span class="checkmark"></span>
+            Scrape HSMSE Google Classroom
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="scrape-geometry-calendar" checked>
+            <span class="checkmark"></span>
+            Scrape Geometry Course Calendar (Google Sheets)
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="scrape-jupiter" checked>
+            <span class="checkmark"></span>
+            Scrape Jupiter Ed Assignments
+          </label>
+        </div>
+        <div class="form-group">
+          <button type="button" id="save-app-settings" class="btn">Save Preferences</button>
+        </div>
+        <p class="help-text">Choose which sources to scrape for assignments. Uncheck any sources you don't want to include in the assignment update process.</p>
+      </div>
+
       <!-- Jupiter Credentials Section -->
       <div class="settings-section">
-        <h3>Jupiter Ed Credentials</h3>
+        <h3 id="jupiter-credentials-header">Jupiter Ed Credentials</h3>
         <form id="jupiter-credentials-form">
           <div class="form-group">
             <label for="student-name">Student Name</label>
@@ -39,6 +76,7 @@
             </div>
           </div>
           <div class="btn-group">
+            <button type="button" id="delete-credentials" class="btn btn-danger btn-small" style="display: none;">Delete</button>
             <button type="button" id="test-credentials" class="btn btn-secondary">Test Login</button>
             <button type="submit" class="btn btn-primary">Save Credentials</button>
           </div>
@@ -47,7 +85,7 @@
 
       <!-- Class Selection Section -->
       <div class="settings-section">
-        <h3>Class Selection</h3>
+        <h3 id="jupiter-classes-header">Class Selection <span class="help-icon" id="class-selection-help" title="Click for explanation">?</span></h3>
         <p>Select which classes to scrape from Jupiter Ed:</p>
         <div class="btn-group">
           <button type="button" id="load-classes" class="btn btn-secondary">Load Classes</button>

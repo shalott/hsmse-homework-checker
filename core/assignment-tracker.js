@@ -397,15 +397,13 @@ class AssignmentTracker {
             if (!assignment.due_date_parsed) return true;
             const dueDate = new Date(assignment.due_date_parsed);
             return dueDate >= now;
-        }).sort((a, b) => {
-            // Assignments with no due date go to the end
-            if (!a.due_date_parsed && !b.due_date_parsed) return 0;
-            if (!a.due_date_parsed) return 1;
-            if (!b.due_date_parsed) return -1;
-            return new Date(a.due_date_parsed) - new Date(b.due_date_parsed);
         });
 
-        this.renderAssignmentList(container, upcoming, 'No upcoming assignments');
+        // Apply sorting based on current sort selection
+        const sortBy = document.getElementById('sortBy')?.value || 'date';
+        const sortedUpcoming = this.sortAssignments(upcoming, sortBy);
+
+        this.renderAssignmentList(container, sortedUpcoming, 'No upcoming assignments');
     }
 
     renderMissingAssignments() {
@@ -417,21 +415,22 @@ class AssignmentTracker {
             if (!assignment.due_date_parsed) return false;
             const dueDate = new Date(assignment.due_date_parsed);
             return dueDate < now;
-        }).sort((a, b) => {
-            return new Date(b.due_date_parsed) - new Date(a.due_date_parsed); // Most recent first
         });
 
-        this.renderAssignmentList(container, missing, 'No missing assignments');
+        // Sort missing assignments by date (most recent first)
+        const sortedMissing = this.sortAssignments(missing, 'date', true);
+
+        this.renderAssignmentList(container, sortedMissing, 'No missing assignments');
     }
 
     renderAssignmentList(container, assignments, emptyMessage) {
         container.innerHTML = '';
 
         if (assignments.length === 0) {
-            const emptyDiv = document.createElement('div');
-            emptyDiv.className = 'assignment-item';
-            emptyDiv.innerHTML = `<div class="assignment-name">${emptyMessage}</div>`;
-            container.appendChild(emptyDiv);
+            const emptyLi = document.createElement('li');
+            emptyLi.className = 'assignment-item';
+            emptyLi.innerHTML = `<div class="assignment-name">${emptyMessage}</div>`;
+            container.appendChild(emptyLi);
             return;
         }
 
@@ -442,7 +441,7 @@ class AssignmentTracker {
     }
 
     createAssignmentItem(assignment) {
-        const item = document.createElement('div');
+        const item = document.createElement('li');
         item.className = 'assignment-item';
 
         const header = document.createElement('div');
@@ -593,6 +592,27 @@ class AssignmentTracker {
 
         // Refresh the assignment display with new data
         this.refresh();
+    }
+
+    sortAssignments(assignments, sortBy, reverse = false) {
+        return [...assignments].sort((a, b) => {
+            let comparison = 0;
+            
+            if (sortBy === 'class') {
+                // Sort by class name
+                const classA = a.class_name || '';
+                const classB = b.class_name || '';
+                comparison = classA.localeCompare(classB);
+            } else {
+                // Sort by date (default)
+                if (!a.due_date_parsed && !b.due_date_parsed) return 0;
+                if (!a.due_date_parsed) return 1;
+                if (!b.due_date_parsed) return -1;
+                comparison = new Date(a.due_date_parsed) - new Date(b.due_date_parsed);
+            }
+            
+            return reverse ? -comparison : comparison;
+        });
     }
 }
 

@@ -22,12 +22,42 @@ if (isDevelopment) {
   // Development mode: use local project directory
   userDataRoot = path.resolve(__dirname, '..');
   console.log('Running in development mode, using local directories');
+  console.log('Development mode detected because:', {
+    NODE_ENV: process.env.NODE_ENV,
+    npm_lifecycle_event: process.env.npm_lifecycle_event,
+    isPackaged: require('electron').app?.isPackaged
+  });
 } else {
   // Production mode: use Electron's userData directory
   try {
     const electron = require('electron');
-    userDataRoot = (electron.app || electron.remote.app).getPath('userData');
-    console.log('Running in production mode, using userData directory');
+    if (electron.app) {
+      // Main process
+      userDataRoot = electron.app.getPath('userData');
+      console.log('Running in production mode (main process), using userData directory:', userDataRoot);
+    } else if (electron.remote && electron.remote.app) {
+      // Renderer process with remote
+      userDataRoot = electron.remote.app.getPath('userData');
+      console.log('Running in production mode (renderer process), using userData directory:', userDataRoot);
+    } else {
+      // Renderer process without remote - use OS userData directory
+      const os = require('os');
+      const appName = 'HSMSE HW';
+      
+      // Cross-platform userData directory
+      if (process.platform === 'darwin') {
+        // macOS
+        userDataRoot = path.join(os.homedir(), 'Library', 'Application Support', appName);
+      } else if (process.platform === 'win32') {
+        // Windows
+        userDataRoot = path.join(os.homedir(), 'AppData', 'Roaming', appName);
+      } else {
+        // Linux and others
+        userDataRoot = path.join(os.homedir(), '.config', appName);
+      }
+      
+      console.log('Running in production mode (renderer process), using OS userData directory:', userDataRoot);
+    }
   } catch (e) {
     console.log('Error getting userData root:', e);
     userDataRoot = path.resolve(__dirname, '..');
@@ -52,6 +82,7 @@ const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
 // Main data files
 const ASSIGNMENTS_FILE = path.join(DATA_DIR, 'all_assignments.json');
 const LOG_FILE = path.join(TEMP_DIR, 'app.log');
+const APP_SETTINGS_FILE = path.join(DATA_DIR, 'app_settings.json');
 
 // Google Classroom configuration
 const GOOGLE_CLASSROOM_URL_BASE = 'https://classroom.google.com/u/';
@@ -83,6 +114,7 @@ module.exports = {
   BACKUPS_DIR,
   ASSIGNMENTS_FILE,
   LOG_FILE,
+  APP_SETTINGS_FILE,
   GOOGLE_CLASSROOM_URL_BASE,
   GOOGLE_CLASSROOM_ASSIGNMENTS_PATH,
   JUPITER_LOGIN_URL,

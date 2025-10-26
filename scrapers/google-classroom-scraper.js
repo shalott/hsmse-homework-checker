@@ -362,7 +362,9 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
         try {
           const pointsElements = document.querySelectorAll('*');
           for (const element of pointsElements) {
-            const text = element.textContent;
+            // Use innerHTML and strip HTML tags with spaces, same as main text processing
+            const html = element.innerHTML || '';
+            const text = html.replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();
             if (text && (text.includes('points') || text.includes('Points'))) {
               const pointsMatch = text.match(/(\\d+)\\s+[Pp]oints/);
               if (pointsMatch) {

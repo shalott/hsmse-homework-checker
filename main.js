@@ -1,12 +1,12 @@
 // Setup absolute requires from project root
 require('app-module-path').addPath(__dirname);
 
-const { app, BrowserWindow, BrowserView, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 // STEP 1: Load constants FIRST (before anything else)
-const { BROWSER_VIEW_BOUNDS, ASSIGNMENTS_FILE, APP_SETTINGS_FILE, JUPITER_LOGIN_URL } = require('config/constants');
+const { BROWSER_VIEW_BOUNDS, ASSIGNMENTS_FILE, APP_SETTINGS_FILE, JUPITER_LOGIN_URL, WINDOWS_DIR, APP_DIR, MAIN_HTML_PATH, SETTINGS_HTML_PATH, LOGS_HTML_PATH, ICON_PATH, OVERLAY_NOTIFICATION_HTML_PATH, OVERLAY_NOTIFICATION_CSS_PATH } = require('config/constants');
 
 // STEP 2: Import startup validation (but don't run it yet)
 const { runStartupValidation } = require('core/validation_startup');
@@ -28,6 +28,15 @@ const { saveAssignments } = require('scrapers/assignment-utils');
 const AssignmentBackup = require('core/assignment-backup');
 const { runScrapingValidation } = require('core/validation_scraping');
 
+// Import scheduler
+const scheduler = require('core/scheduler');
+
+// Import auto-startup
+const autoStartup = require('core/auto-startup');
+
+// Import app menu
+const { createApplicationMenu } = require('windows/app-menu');
+
 // Initialize backup system
 const backupSystem = new AssignmentBackup();
 
@@ -36,6 +45,8 @@ let mainWindow;
 let settingsWindow;
 let browserView; // Single browser view for all scraping operations
 let isScrapingCanceled = false;
+let scrapingTimeout = null; // Timeout reference for scraping process
+let systemTray = null; // System tray reference
 
 function createWindow() {
   // Create the browser window
@@ -52,7 +63,7 @@ function createWindow() {
   logToRenderer('Main window created', 'info');
 
   // Load the app
-  mainWindow.loadFile(path.join(__dirname, 'main.html'));
+  mainWindow.loadFile(MAIN_HTML_PATH);
 
   // Initialize logger with main window
   initializeLogger(mainWindow);
@@ -68,11 +79,69 @@ function createWindow() {
   // Allow normal window minimize behavior
   // (removed aggressive minimize prevention)
 
-  // Cleanup on close
+  // Handle window close - hide to tray instead of quitting
+  mainWindow.on('close', (event) => {
+    // Prevent the default close behavior
+    event.preventDefault();
+    
+    // Hide the window instead of closing it
+    mainWindow.hide();
+    
+    // Show notification that app is running in tray
+    if (systemTray) {
+      systemTray.displayBalloon({
+        iconType: 'info',
+        title: 'HSMSE Homework Checker',
+        content: 'App is running in the system tray. Click the tray icon to show the app.'
+      });
+    }
+    
+    logToRenderer('App hidden to system tray', 'info');
+  });
+
+  // Cleanup on closed (when app actually quits)
   mainWindow.on('closed', () => {
     // No need to log here, as the window is already gone
     mainWindow = null;
     browserView = null;
+  });
+
+  // Track if scraping is currently running
+  let isScrapingRunning = false;
+
+  // Prevent minimize during scraping and warn user
+  mainWindow.on('minimize', (event) => {
+    if (isScrapingRunning) {
+      // Check if scraping is currently running
+      event.preventDefault();
+      
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Cannot Minimize During Scraping',
+        message: 'The app cannot be minimized while scraping is in progress.',
+        detail: 'Google Classroom scraping requires the browser window to remain visible. Please wait for scraping to complete before minimizing the app.',
+        buttons: ['OK'],
+        defaultId: 0
+      });
+      
+      logToRenderer('User attempted to minimize during scraping - prevented', 'warn');
+    }
+  });
+
+  // Warn user about minimize during scraping when they try to minimize
+  mainWindow.on('will-minimize', (event) => {
+    if (isScrapingRunning) {
+      event.preventDefault();
+      
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Scraping in Progress',
+        message: 'Cannot minimize while scraping is running.',
+        detail: 'Google Classroom scraping requires the browser window to remain visible. Please wait for the scraping process to complete.',
+        buttons: ['OK'],
+        defaultId: 0
+      });
+    }
   });
 
   // Open DevTools in development
@@ -108,7 +177,7 @@ function createSettingsWindow() {
   });
 
   // Load the settings page
-  settingsWindow.loadFile(path.join(__dirname, 'windows', 'settings.html'));
+  settingsWindow.loadFile(SETTINGS_HTML_PATH);
 
   // Show window when ready
   settingsWindow.once('ready-to-show', () => {
@@ -149,6 +218,20 @@ async function initializeApp() {
     logToRenderer('START OF SESSION', 'info');
     logToRenderer('==========================================', 'info');
     
+    // Initialize scheduler with current settings
+    await initializeScheduler();
+    
+    // Create application menu
+    createApplicationMenu();
+    
+    // Create system tray
+    createSystemTray();
+    
+    // Check for failure alerts after a short delay to ensure UI is ready
+    setTimeout(async () => {
+      await checkForFailureAlerts();
+    }, 2000);
+    
     console.log('App initialization completed successfully');
   } catch (error) {
     console.error('App initialization failed:', error);
@@ -162,12 +245,11 @@ app.whenReady().then(() => {
   initializeApp();
 });
 
-// Quit when all windows are closed
+// Handle app quit behavior
 app.on('window-all-closed', () => {
-  // On macOS it is common for applications to stay open until explicitly quit
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Don't quit the app when all windows are closed - let it run in the tray
+  // The app will only quit when explicitly requested via tray menu or app.quit()
+  logToRenderer('All windows closed - app continues running in system tray', 'info');
 });
 
 app.on('activate', () => {
@@ -178,19 +260,231 @@ app.on('activate', () => {
 });
 
 // Alert user and wait for confirmation
-async function alertUser(title, message) {
+async function alertUser(title, message, detail = '') {
   return new Promise((resolve) => {
     dialog.showMessageBox(mainWindow, {
       type: 'warning',
       title: title,
       message: message,
-      detail: 'Please read the message above carefully before proceeding.',
+      detail: detail,
       buttons: ['OK'],
       defaultId: 0,
       cancelId: 0
     }).then(() => {
       resolve();
     });
+  });
+}
+
+// Alert user about assignment update failure
+async function alertUserToUpdateFailure(errorDetails = '') {
+  const detail = errorDetails 
+    ? `${errorDetails}\n\nPlease try to update assignments again. If it keeps failing, you might want to watch the update process closely or look in the logs to see what is going wrong.`
+    : 'Please try to update assignments again. If it keeps failing, you might want to watch the update process closely or look in the logs to see what is going wrong.';
+    
+  return alertUser(
+    'ALERT: Assignment Update Failed',
+    'The assignment scraping failed and needs to be run again.',
+    detail
+  );
+}
+
+// Alert user about successful assignment update
+async function alertUserToUpdateSuccess(totalAssignments, breakdown) {
+  await showOverlayNotification(
+    'success',
+    'Success!',
+    'Assignments successfully updated.',
+    '🎉'
+  );
+}
+
+// Helper function to check if scraping has been canceled
+function checkScrapingCanceled() {
+  if (isScrapingCanceled) {
+    console.log('Cancellation detected - throwing error to stop scraping');
+    throw new Error('Scraping canceled by user');
+  }
+}
+
+// Make cancellation flag accessible to scrapers
+global.isScrapingCanceled = () => isScrapingCanceled;
+
+// Show unified overlay notification
+async function showOverlayNotification(type, header, message, icon = '🎉') {
+  return new Promise((resolve) => {
+    // Read CSS from external file
+    const fs = require('fs');
+    const cssContent = fs.readFileSync(OVERLAY_NOTIFICATION_CSS_PATH, 'utf8');
+    
+    // Add animations to CSS
+    const cssWithAnimations = cssContent + `
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes slideInScale {
+        from {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+    `;
+    
+    // Inject CSS into main window
+    mainWindow.webContents.insertCSS(cssWithAnimations).then(() => {
+      // Create and show the notification overlay
+      mainWindow.webContents.executeJavaScript(`
+        (function() {
+          try {
+            // Remove any existing notification overlay
+            const existingOverlay = document.getElementById('notification-overlay');
+            if (existingOverlay) {
+              existingOverlay.remove();
+            }
+            
+            // Create notification overlay
+            const overlay = document.createElement('div');
+            overlay.id = 'notification-overlay';
+            overlay.style.cssText = \`
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background: rgba(0, 0, 0, 0.7);
+              z-index: 9999;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              animation: fadeIn 0.3s ease-out;
+            \`;
+            
+            const notificationBox = document.createElement('div');
+            notificationBox.className = 'notification-box ${type}';
+            notificationBox.style.cssText = \`
+              background: white;
+              padding: 40px;
+              border-radius: 16px;
+              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+              max-width: 450px;
+              text-align: center;
+              animation: slideInScale 0.4s ease-out;
+            \`;
+            
+            const iconEl = document.createElement('div');
+            iconEl.className = 'notification-icon';
+            iconEl.style.cssText = \`
+              font-size: 48px;
+              margin-bottom: 16px;
+              line-height: 1;
+            \`;
+            iconEl.textContent = '${icon}';
+            
+            const headerEl = document.createElement('div');
+            headerEl.className = 'notification-header';
+            headerEl.style.cssText = \`
+              font-size: 28px;
+              font-weight: 700;
+              color: #1d1d1f;
+              margin: 0 0 12px 0;
+              line-height: 1.2;
+            \`;
+            headerEl.textContent = '${header}';
+            
+            const messageEl = document.createElement('div');
+            messageEl.className = 'notification-message';
+            messageEl.style.cssText = \`
+              font-size: 18px;
+              color: #424245;
+              margin: 0 0 24px 0;
+              line-height: 1.4;
+              font-weight: 400;
+            \`;
+            messageEl.textContent = '${message}';
+            
+            const okButton = document.createElement('button');
+            okButton.className = 'notification-button';
+            okButton.style.cssText = \`
+              background: #007aff;
+              color: white;
+              border: none;
+              padding: 14px 28px;
+              border-radius: 8px;
+              cursor: pointer;
+              font-size: 16px;
+              font-weight: 600;
+              transition: background-color 0.2s ease;
+              min-width: 100px;
+            \`;
+            okButton.textContent = 'OK';
+            
+            // Add hover effect
+            okButton.addEventListener('mouseenter', () => {
+              okButton.style.background = '#0056b3';
+            });
+            okButton.addEventListener('mouseleave', () => {
+              okButton.style.background = '#007aff';
+            });
+            
+            // Handle OK button click
+            okButton.addEventListener('click', () => {
+              overlay.remove();
+              resolve();
+            });
+            
+            // Assemble the overlay
+            notificationBox.appendChild(iconEl);
+            notificationBox.appendChild(headerEl);
+            notificationBox.appendChild(messageEl);
+            notificationBox.appendChild(okButton);
+            overlay.appendChild(notificationBox);
+            document.body.appendChild(overlay);
+            
+          } catch (error) {
+            console.error('Error creating notification overlay:', error);
+            resolve();
+          }
+        })()
+      `);
+    }).catch(error => {
+      console.error('Error injecting CSS:', error);
+      resolve();
+    });
+  });
+}
+
+// Timeout wrapper for scraping operations
+async function withTimeout(promise, timeoutMs, operationName) {
+  return new Promise(async (resolve, reject) => {
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      logToRenderer(`Scraping operation timed out after ${timeoutMs / 1000 / 60} minutes: ${operationName}`, 'error');
+      isScrapingCanceled = true;
+      
+      // Clean up browser view
+      if (browserView && mainWindow) {
+        mainWindow.setBrowserView(null);
+        browserView = null;
+      }
+      
+      reject(new Error(`Scraping operation timed out after ${timeoutMs / 1000 / 60} minutes`));
+    }, timeoutMs);
+    
+    try {
+      const result = await promise;
+      clearTimeout(timeoutId);
+      resolve(result);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      reject(error);
+    }
   });
 }
 
@@ -334,7 +628,7 @@ function createLogsWindow() {
   });
 
   // Load the logs HTML file
-  logsWindow.loadFile(path.join(__dirname, 'windows', 'logs.html'));
+  logsWindow.loadFile(LOGS_HTML_PATH);
 
   // Show window when ready
   logsWindow.once('ready-to-show', () => {
@@ -359,8 +653,14 @@ async function runGoogleWorkflow0() {
   logToRenderer('Starting Google Classroom /u/0 workflow...', 'info');
   
   try {
+    // Check for cancellation before starting
+    checkScrapingCanceled();
+    
     // Ensure we have a browser view
     createBrowserView();
+    
+    // Check for cancellation after creating browser view
+    checkScrapingCanceled();
     
     // Try to scrape assignments from /u/0 directly
     logToRenderer('Loading /u/0 and attempting to scrape assignments...', 'info');
@@ -388,8 +688,14 @@ async function runGoogleWorkflow1() {
   logToRenderer('Starting Google Classroom /u/1 workflow...', 'info');
   
   try {
+    // Check for cancellation before starting
+    checkScrapingCanceled();
+    
     // Ensure we have a browser view
     createBrowserView();
+    
+    // Check for cancellation after creating browser view
+    checkScrapingCanceled();
     
     // Try to scrape assignments from /u/1 directly
     logToRenderer('Loading /u/1 and attempting to scrape assignments...', 'info');
@@ -417,17 +723,26 @@ async function runJupiterWorkflow() {
   logToRenderer('Starting Jupiter Ed workflow...', 'info');
   
   try {
+    // Check for cancellation before starting
+    checkScrapingCanceled();
+    
     // Step 1: Setup Jupiter browser
     const setupResult = await setupJupiterBrowser();
     if (!setupResult.success) {
       return { success: false, error: setupResult.error, assignments: [] };
     }
     
+    // Check for cancellation after setup
+    checkScrapingCanceled();
+    
     // Step 2: Authenticate with Jupiter (credentials guaranteed to exist from pre-checks)
     const accessResult = await handleJupiterAccess(browserView, mainWindow);
     if (!accessResult.success) {
       return { success: false, error: 'Jupiter access failed', assignments: [] };
     }
+    
+    // Check for cancellation after authentication
+    checkScrapingCanceled();
     
     // Step 2: Scrape assignments from Jupiter
     const scrapingResult = await scrapeJupiterAssignments(browserView);
@@ -447,14 +762,23 @@ async function runJupiterWorkflow() {
 async function runGoogleSheetsWorkflow() {
   logToRenderer('Starting Google Sheets workflow...', 'info');
   try {
+    // Check for cancellation before starting
+    checkScrapingCanceled();
+    
     // Ensure we have a browser view
     createBrowserView();
+    
+    // Check for cancellation after creating browser view
+    checkScrapingCanceled();
     
     // Step 1: Access the Google Sheet (authenticate)
     const accessResult = await handleGoogleSheetsAccess(browserView);
     if (!accessResult.success) {
       return { success: false, error: 'Google Sheets access failed', assignments: [] };
     }
+    
+    // Check for cancellation after access
+    checkScrapingCanceled();
     
     // Step 2: Scrape assignments from the Google Sheet
     const scrapingResult = await scrapeGoogleSheets(browserView);
@@ -575,7 +899,7 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
       logToRenderer('Some scrapers failed - showing error alert', 'error');
       // Hide browser view before showing alert
       mainWindow.setBrowserView(null);
-      await alertUser('Scraping Failure', 'One or more scrapers failed. Please check the logs for details.');
+      await alertUserToUpdateFailure();
     } else {
       logToRenderer('All scrapers completed successfully', 'success');
     }
@@ -694,7 +1018,42 @@ ipcMain.handle('start-unified-auth', async () => {
   
   // Reset cancel flag at start of scraping
   isScrapingCanceled = false;
+  isScrapingRunning = true;
   
+  // Wrap the entire scraping process with a 20-minute timeout
+  const SCRAPING_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+  
+  try {
+    const result = await withTimeout(
+      runScrapingProcess(),
+      SCRAPING_TIMEOUT_MS,
+      'Main scraping process'
+    );
+    
+    // Track success if scraping completed successfully
+    if (result && result.success) {
+      await markScrapingSuccess();
+    }
+    
+    // Clear scraping running flag
+    isScrapingRunning = false;
+    return result;
+  } catch (error) {
+    // Clear scraping running flag on error
+    isScrapingRunning = false;
+    
+    if (error.message.includes('timed out')) {
+      logToRenderer('Scraping process timed out - cleaning up resources', 'error');
+      // Mark scraping as failed for tracking
+      await markScrapingFailure('Scraping timed out after 20 minutes');
+      return { success: false, error: 'Scraping timed out after 20 minutes' };
+    }
+    throw error;
+  }
+});
+
+// Extract the main scraping logic into a separate function
+async function runScrapingProcess() {
   try {
     // Load app settings first
     const appSettings = await getAppSettings();
@@ -878,26 +1237,99 @@ ipcMain.handle('start-unified-auth', async () => {
     const finalSheetsResult = results.find(r => r.type === 'sheets').result;
     
     try {
-      return await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult, finalSheetsResult);
+      const result = await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult, finalSheetsResult);
+      
+      // Show success message if scraping completed successfully
+      if (result.success && result.totalAssignments > 0) {
+        const breakdown = {
+          google0Assignments: result.google0Assignments || 0,
+          google1Assignments: result.google1Assignments || 0,
+          jupiterAssignments: result.jupiterAssignments || 0,
+          sheetsAssignments: (finalSheetsResult && finalSheetsResult.success) ? finalSheetsResult.assignments.length : 0
+        };
+        await alertUserToUpdateSuccess(result.totalAssignments, breakdown);
+      }
+      
+      return result;
     } catch (processingError) {
       logToRenderer(`Error processing workflow results: ${processingError.message}`, 'error');
       logToRenderer('Showing error alert due to processing failure', 'error');
-      await alertUser('Processing Error', `Error processing workflow results: ${processingError.message}`);
+      await alertUserToUpdateFailure(`Processing error: ${processingError.message}`);
       return { success: false, error: `Processing failed: ${processingError.message}` };
     }
 
   } catch (error) {
     logToRenderer(`Error in integrated workflow: ${error.message}`, 'error');
     logToRenderer('Showing error alert due to workflow failure', 'error');
-    await alertUser('Workflow Error', `An error occurred in the integrated workflow: ${error.message}`);
+    await alertUserToUpdateFailure(`Workflow error: ${error.message}`);
+    // Mark scraping as failed for tracking
+    await markScrapingFailure(error.message);
     return { success: false, error: error.message };
   }
-});
+}
+
+// Function to mark scraping failures for tracking
+async function markScrapingFailure(errorMessage) {
+  try {
+    const settings = await getAppSettings();
+    const failureData = {
+      lastScrapingFailed: true,
+      lastFailureTime: new Date().toISOString(),
+      lastFailureReason: errorMessage
+    };
+    
+    const updatedSettings = {
+      ...settings,
+      ...failureData,
+      last_updated: new Date().toISOString()
+    };
+    
+    await fs.promises.writeFile(APP_SETTINGS_FILE, JSON.stringify(updatedSettings, null, 2));
+    logToRenderer(`Scraping failure tracked: ${errorMessage}`, 'info');
+  } catch (error) {
+    logToRenderer(`Error tracking scraping failure: ${error.message}`, 'error');
+  }
+}
+
+// Function to mark scraping success
+async function markScrapingSuccess() {
+  try {
+    const settings = await getAppSettings();
+    const successData = {
+      lastScrapingFailed: false,
+      lastSuccessTime: new Date().toISOString()
+    };
+    
+    const updatedSettings = {
+      ...settings,
+      ...successData,
+      last_updated: new Date().toISOString()
+    };
+    
+    await fs.promises.writeFile(APP_SETTINGS_FILE, JSON.stringify(updatedSettings, null, 2));
+    logToRenderer('Scraping success tracked', 'info');
+  } catch (error) {
+    logToRenderer(`Error tracking scraping success: ${error.message}`, 'error');
+  }
+}
 
 ipcMain.handle('cancel-scraping', async () => {
+  console.log('Cancel request received - setting isScrapingCanceled = true');
   logToRenderer('Assignment update canceled by user', 'info');
   isScrapingCanceled = true;
+  isScrapingRunning = false;
+  console.log('Cancel flags set - isScrapingCanceled:', isScrapingCanceled, 'isScrapingRunning:', isScrapingRunning);
   return { success: true };
+});
+
+ipcMain.handle('show-cancel-confirmation', async () => {
+  await showOverlayNotification(
+    'info',
+    'Update Canceled',
+    'The assignment update has been canceled successfully.',
+    '⏹️'
+  );
+  return { response: 0 }; // Return same format as dialog.showMessageBox
 });
 
 ipcMain.handle('save-jupiter-credentials', async (event, { student_name, password, loginType }) => {
@@ -1077,42 +1509,6 @@ ipcMain.handle('delete-jupiter-credentials', async () => {
   }
 });
 
-ipcMain.handle('clear-google-cookies', async () => {
-  try {
-    if (!browserView || !browserView.webContents) {
-      logToRenderer('Browser view not available for clearing cookies', 'error');
-      return { success: false, error: 'Browser view not available' };
-    }
-    
-    logToRenderer('Clearing Google cookies and authentication data...', 'info');
-    
-    const session = browserView.webContents.session;
-    
-    // Clear all storage data for Google domains
-    await session.clearStorageData({
-      storages: ['cookies', 'localStorage', 'sessionStorage', 'indexeddb', 'websql', 'cachestorage'],
-      origins: ['https://accounts.google.com', 'https://classroom.google.com', 'https://google.com', 'https://www.google.com']
-    });
-    
-    // Clear all cookies for all domains (more comprehensive)
-    await session.clearStorageData({
-      storages: ['cookies']
-    });
-    
-    // Navigate to Google logout URL to ensure complete signout
-    await browserView.webContents.loadURL('https://accounts.google.com/logout');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for logout to complete
-    
-    // Navigate to a neutral page
-    await browserView.webContents.loadURL('https://classroom.google.com');
-    
-    logToRenderer('Google cookies and authentication data cleared successfully', 'success');
-    return { success: true };
-  } catch (error) {
-    logToRenderer(`Error clearing Google cookies: ${error.message}`, 'error');
-    return { success: false, error: error.message };
-  }
-});
 
 // Helper function to get app settings
 async function getAppSettings() {
@@ -1126,7 +1522,10 @@ async function getAppSettings() {
         scrape_nyc_students_google: true,
         scrape_hsmse_google: true,
         scrape_geometry_calendar: true,
-        scrape_jupiter: true
+        scrape_jupiter: true,
+        // Default scheduling settings
+        schedule_enabled: false,
+        schedule_time: '15:30' // 3:30 PM default
       };
     }
   } catch (error) {
@@ -1134,8 +1533,110 @@ async function getAppSettings() {
     return {
       scrape_nyc_students_google: true,
       scrape_hsmse_google: true,
-      scrape_geometry_calendar: true
+      scrape_geometry_calendar: true,
+      scrape_jupiter: true,
+      schedule_enabled: false,
+      schedule_time: '15:30'
     };
+  }
+}
+
+// Initialize scheduler with current settings
+async function initializeScheduler() {
+  try {
+    const settings = await getAppSettings();
+    
+    if (settings.schedule_enabled && settings.schedule_time) {
+      logToRenderer(`Initializing scheduler for daily scraping at ${settings.schedule_time}`, 'info');
+      scheduler.scheduleDailyScraping(settings.schedule_time, settings.schedule_enabled);
+    } else {
+      logToRenderer('Scheduler disabled in settings', 'info');
+    }
+  } catch (error) {
+    logToRenderer(`Error initializing scheduler: ${error.message}`, 'error');
+  }
+}
+
+
+// Create system tray
+function createSystemTray() {
+  try {
+    // Create tray icon from the app icon
+    const iconPath = ICON_PATH;
+    const trayIcon = nativeImage.createFromPath(iconPath);
+    
+    // Resize icon for system tray (16x16 or 32x32 depending on platform)
+    const resizedIcon = trayIcon.resize({ width: 16, height: 16 });
+    
+    systemTray = new Tray(resizedIcon);
+    systemTray.setToolTip('HSMSE Homework Checker');
+    
+    // Set initial context menu
+    updateSystemTrayMenu();
+    
+    // Handle tray click (show/hide window)
+    systemTray.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isVisible()) {
+          mainWindow.hide();
+        } else {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    });
+    
+    // Handle double click
+    systemTray.on('double-click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+    
+    logToRenderer('System tray created successfully', 'info');
+    
+  } catch (error) {
+    logToRenderer(`Error creating system tray: ${error.message}`, 'error');
+  }
+}
+
+// Check for and show failure alerts on app startup
+async function checkForFailureAlerts() {
+  try {
+    const settings = await getAppSettings();
+    
+    if (settings.lastScrapingFailed && settings.lastFailureTime) {
+      const failureTime = new Date(settings.lastFailureTime);
+      const now = new Date();
+      const hoursSinceFailure = (now.getTime() - failureTime.getTime()) / (1000 * 60 * 60);
+      
+      // Only show alert if failure was recent (within last 24 hours)
+      if (hoursSinceFailure < 24) {
+        logToRenderer(`Last scraping failed ${Math.round(hoursSinceFailure)} hours ago: ${settings.lastFailureReason}`, 'warn');
+        
+        // Show prominent alert to user
+        await dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          title: 'ALERT: Last Update Failed',
+          message: 'ALERT: Last Update Failed',
+          detail: `The last assignment scraping failed and needs to be run manually.\n\nFailure occurred ${Math.round(hoursSinceFailure)} hours ago.\nReason: ${settings.lastFailureReason}\n\nPlease try to update assignments again. If it keeps failing, you might want to watch the update process closely or look in the logs to see what is going wrong.`,
+          buttons: ['Run Manual Update', 'View Logs', 'Dismiss'],
+          defaultId: 0,
+          cancelId: 2
+        }).then((result) => {
+          if (result.response === 0) {
+            // User chose to run manual update
+            mainWindow.webContents.send('start-manual-scraping');
+          } else if (result.response === 1) {
+            // User chose to view logs
+            createLogsWindow();
+          }
+        });
+      }
+    }
+  } catch (error) {
+    logToRenderer(`Error checking for failure alerts: ${error.message}`, 'error');
   }
 }
 
@@ -1173,6 +1674,21 @@ ipcMain.handle('save-app-settings', async (event, settings) => {
     
     await fs.promises.writeFile(APP_SETTINGS_FILE, JSON.stringify(settingsWithTimestamp, null, 2));
     logToRenderer('App settings saved successfully', 'info');
+    
+    // Update scheduler if scheduling settings changed
+    if (settings.schedule_enabled !== undefined || settings.schedule_time !== undefined) {
+      if (settings.schedule_enabled && settings.schedule_time) {
+        logToRenderer(`Updating scheduler for daily scraping at ${settings.schedule_time}`, 'info');
+        scheduler.scheduleDailyScraping(settings.schedule_time, settings.schedule_enabled);
+      } else {
+        logToRenderer('Disabling scheduler', 'info');
+        scheduler.clearSchedule();
+      }
+      
+      // Update system tray menu to reflect new status
+      updateSystemTrayMenu();
+    }
+    
     return { success: true };
   } catch (error) {
     logToRenderer(`Error saving app settings: ${error.message}`, 'error');
@@ -1297,4 +1813,162 @@ ipcMain.handle('get-log-file-path', () => {
   const { LOG_FILE } = require('config/constants');
   return LOG_FILE;
 });
+
+// Scheduler IPC handlers
+ipcMain.handle('get-scheduler-status', () => {
+  return scheduler.getStatus();
+});
+
+ipcMain.handle('test-scheduled-scraping', async () => {
+  logToRenderer('Testing scheduled scraping...', 'info');
+  await scheduler.runScheduledScraping();
+  return { success: true };
+});
+
+ipcMain.handle('stop-scheduler', () => {
+  scheduler.stop();
+  return { success: true };
+});
+
+// Auto-startup IPC handlers
+ipcMain.handle('get-auto-startup-status', async () => {
+  try {
+    const isEnabled = await autoStartup.isAutoStartupEnabled();
+    return { success: true, enabled: isEnabled };
+  } catch (error) {
+    logToRenderer(`Error getting auto-startup status: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('set-auto-startup', async (event, enabled) => {
+  try {
+    const result = await autoStartup.enableAutoStartup(enabled);
+    return result;
+  } catch (error) {
+    logToRenderer(`Error setting auto-startup: ${error.message}`, 'error');
+    return { success: false, error: error.message };
+  }
+});
+
+// Function to start scraping (used by tray and menu)
+async function startScraping() {
+  try {
+    logToRenderer('Starting scraping from tray/menu...', 'info');
+    
+    // Reset cancel flag at start of scraping
+    isScrapingCanceled = false;
+    isScrapingRunning = true;
+    
+    // Wrap the entire scraping process with a 20-minute timeout
+    const SCRAPING_TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
+    
+    const result = await withTimeout(
+      runScrapingProcess(),
+      SCRAPING_TIMEOUT_MS,
+      'Main scraping process'
+    );
+    
+    // Track success if scraping completed successfully
+    if (result && result.success) {
+      await markScrapingSuccess();
+    }
+    
+    // Clear scraping running flag
+    isScrapingRunning = false;
+    return result;
+  } catch (error) {
+    // Clear scraping running flag on error
+    isScrapingRunning = false;
+    
+    if (error.message.includes('timed out')) {
+      logToRenderer('Scraping process timed out - cleaning up resources', 'error');
+      // Mark scraping as failed for tracking
+      await markScrapingFailure('Scraping timed out after 20 minutes');
+      return { success: false, error: 'Scraping timed out after 20 minutes' };
+    }
+    throw error;
+  }
+}
+
+// Update system tray menu based on current status
+function updateSystemTrayMenu() {
+  if (!systemTray) return;
+  
+  try {
+    const status = scheduler.getStatus();
+    const isScheduled = status.isScheduled;
+    const nextRunTime = status.nextRunTime;
+    
+    // Create context menu with dynamic content
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Show App',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        }
+      },
+      {
+        label: 'Update Assignments Now',
+        click: async () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+            // Start scraping immediately
+            try {
+              await startScraping();
+            } catch (error) {
+              logToRenderer(`Error starting scraping from tray: ${error.message}`, 'error');
+            }
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: isScheduled ? 'Scheduled Scraping' : 'Scheduled Scraping (Disabled)',
+        enabled: false
+      },
+      ...(isScheduled && nextRunTime ? [{
+        label: `Next run: ${new Date(nextRunTime).toLocaleString()}`,
+        enabled: false
+      }] : []),
+      { type: 'separator' },
+      {
+        label: 'Settings',
+        click: () => {
+          createSettingsWindow();
+        }
+      },
+      {
+        label: 'View Logs',
+        click: () => {
+          createLogsWindow();
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          // Force quit the app when user explicitly chooses quit from tray
+          app.exit(0);
+        }
+      }
+    ]);
+    
+    systemTray.setContextMenu(contextMenu);
+    
+  } catch (error) {
+    logToRenderer(`Error updating system tray menu: ${error.message}`, 'error');
+  }
+}
+
+// Export functions for use by scheduler
+module.exports = {
+  runScrapingProcess,
+  markScrapingFailure,
+  markScrapingSuccess
+};
 

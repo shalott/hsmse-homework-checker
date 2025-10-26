@@ -4,6 +4,14 @@ const { JUPITER_CONFIG_PATH } = require('config/constants');
 const fs = require('fs');
 const path = require('path');
 
+// Helper function to check if scraping has been canceled
+function checkScrapingCanceled() {
+  // Access the global cancellation flag from main process
+  if (global.isScrapingCanceled && global.isScrapingCanceled()) {
+    throw new Error('Scraping canceled by user');
+  }
+}
+
 // Load Jupiter classes configuration
 function loadJupiterClassesConfig() {
   try {
@@ -100,6 +108,9 @@ async function scrapeJupiterAssignments(browserView) {
     
     // Scrape assignments from each class
     for (const classInfo of classes) {
+      // Check for cancellation before each class
+      checkScrapingCanceled();
+      
       logToRenderer(`[Jupiter] Processing class: ${classInfo.name}`, 'info');
       
       const success = await navigateToClass(browserView, classInfo);
@@ -108,10 +119,16 @@ async function scrapeJupiterAssignments(browserView) {
         continue;
       }
       
+      // Check for cancellation after navigation
+      checkScrapingCanceled();
+      
       const assignments = await scrapeCurrentClassAssignments(browserView, classInfo.name);
       allAssignments.push(...assignments);
       
       logToRenderer(`[Jupiter] Found ${assignments.length} assignments in ${classInfo.name}`, 'info');
+      
+      // Check for cancellation after scraping
+      checkScrapingCanceled();
       
       // Navigate back to To Do page
       const backSuccess = await navigateToTodoPage(browserView);

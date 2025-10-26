@@ -100,16 +100,57 @@
         </div>
       </div>
 
-      <!-- Google Account Management Section -->
+      <!-- Automatic Scheduling Section -->
       <div class="settings-section">
-        <h3>Google Account Management</h3>
-        <p>Manage your Google Classroom account sessions:</p>
-        <div class="btn-group">
-          <button type="button" id="clear-google-cookies" class="btn btn-warning">Clear Google Cookies</button>
+        <h3>Automatic Daily Scraping</h3>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="schedule-enabled">
+            <span class="checkmark"></span>
+            Enable automatic daily scraping
+          </label>
         </div>
-        <p class="help-text">This will log you out of all Google accounts in the scraping browser. Use this to test authentication flows or switch between different Google accounts.</p>
+        <div class="form-group" id="schedule-time-group" style="display: none;">
+          <label for="schedule-time">Daily scraping time</label>
+          <input type="time" id="schedule-time" value="15:30" />
+        </div>
+        <div class="form-group" id="schedule-status-group" style="display: none;">
+          <label>Schedule Status</label>
+          <div id="schedule-status" class="status-info">
+            <span id="next-run-time">Calculating...</span>
+          </div>
+        </div>
+        <div class="btn-group" id="schedule-controls" style="display: none;">
+          <button type="button" id="test-scheduled-scraping" class="btn btn-secondary">Test Scheduled Scraping</button>
+          <button type="button" id="stop-scheduler" class="btn btn-warning">Stop Scheduler</button>
+        </div>
+        <p class="help-text">Automatically scrape assignments daily at the specified time. The app will stay running in the background to perform scheduled scraping.</p>
       </div>
 
+      <!-- Auto-Startup Section -->
+      <div class="settings-section">
+        <h3>Auto-Startup</h3>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="auto-startup-enabled">
+            <span class="checkmark"></span>
+            Start app automatically when computer boots up
+          </label>
+        </div>
+        <div class="form-group" id="auto-startup-status-group" style="display: none;">
+          <label>Auto-Startup Status</label>
+          <div id="auto-startup-status" class="status-info">
+            <span id="auto-startup-status-text">Checking...</span>
+          </div>
+        </div>
+        <p class="help-text">Automatically start the app when your computer boots up. This ensures scheduled scraping can run even if you forget to start the app manually.</p>
+      </div>
+
+    </div>
+
+    <!-- Save and Exit Button at Bottom -->
+    <div class="settings-footer">
+      <button type="button" id="save-and-exit" class="btn btn-primary btn-large">Save and Exit</button>
     </div>
 
     <script src="settings.js"></script>

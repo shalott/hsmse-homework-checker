@@ -513,7 +513,10 @@ class AssignmentTracker {
                 <div class="modal-description-content">${assignment.description}</div>
             </div>` : ''}
             ${assignment.url ? `<div class="modal-line">
-                <a href="#" class="modal-url" onclick="require('electron').shell.openExternal('${assignment.url}')">Open Assignment →</a>
+                ${assignment.url.startsWith('https://login.jupitered.com') ? 
+                    `<a href="#" class="modal-url" onclick="require('electron').shell.openExternal('https://login.jupitered.com/todo/index.php?89583')">Open Jupiter →</a>` :
+                    `<a href="#" class="modal-url" onclick="require('electron').shell.openExternal('${assignment.url}')">Open Assignment →</a>`
+                }
             </div>` : ''}
         `;
 

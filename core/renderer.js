@@ -32,6 +32,7 @@ function initializeApp() {
     // Main controls
     updateAssignmentsBtn: document.getElementById('update-assignments'),
     openSettingsBtn: document.getElementById('open-settings'),
+    progressSection: document.getElementById('progress-section'),
     
     // View toggle controls
     assignmentsViewToggle: document.getElementById('assignments-view-toggle'),
@@ -164,12 +165,19 @@ function setupIpcListeners() {
 // Handle the update assignments action (replaces old auth flow)
 async function handleUpdateAssignments() {
   try {
+    // Show progress indicator
+    if (elements.progressSection) {
+      elements.progressSection.style.display = 'block';
+    }
+    
     // Show browser view during data collection
     showBrowserView();
     
-    // Change button to red "Cancel" during scraping
-    setButtonLoading(elements.updateAssignmentsBtn, true, 'Cancel');
+    // Change button to red "Cancel" during scraping (but keep it enabled for clicking)
+    elements.updateAssignmentsBtn.dataset.originalText = elements.updateAssignmentsBtn.textContent;
+    elements.updateAssignmentsBtn.textContent = 'Cancel';
     elements.updateAssignmentsBtn.classList.add('btn-cancel');
+    // Don't disable the button - we need it clickable for cancellation
     
     // Change the click handler to cancel during scraping
     elements.updateAssignmentsBtn.removeEventListener('click', handleUpdateAssignments);
@@ -179,6 +187,12 @@ async function handleUpdateAssignments() {
     
     if (result.success) {
       // Success messages are logged by the main process
+      // Hide progress indicator after a short delay to ensure it's hidden even if success notification is shown
+      setTimeout(() => {
+        if (elements.progressSection) {
+          elements.progressSection.style.display = 'none';
+        }
+      }, 100);
     } else {
       // Error messages are logged by the main process
     }
@@ -199,8 +213,17 @@ async function handleUpdateAssignments() {
     // Still return to assignment view on error
     showAssignmentView();
   } finally {
+    // Hide progress indicator
+    if (elements.progressSection) {
+      elements.progressSection.style.display = 'none';
+    }
+    
     // Restore button to normal state
-    setButtonLoading(elements.updateAssignmentsBtn, false, 'Update Assignments');
+    elements.updateAssignmentsBtn.disabled = false;
+    if (elements.updateAssignmentsBtn.dataset.originalText) {
+      elements.updateAssignmentsBtn.textContent = elements.updateAssignmentsBtn.dataset.originalText;
+      delete elements.updateAssignmentsBtn.dataset.originalText;
+    }
     elements.updateAssignmentsBtn.classList.remove('btn-cancel');
     
     // Restore original click handler
@@ -212,10 +235,17 @@ async function handleUpdateAssignments() {
 // Handle canceling the scraping process
 async function handleCancelScraping() {
   try {
-    await ipcRenderer.invoke('cancel-scraping');
+    console.log('Cancel button clicked - sending cancel request to main process');
+    const result = await ipcRenderer.invoke('cancel-scraping');
+    console.log('Cancel result:', result);
+    
+    // Show confirmation message
+    await ipcRenderer.invoke('show-cancel-confirmation');
+    
     // Cancel message is logged by the main process
     showAssignmentView();
   } catch (error) {
+    console.error('Error canceling scraping:', error);
     // Error messages are logged by the main process
   }
 }

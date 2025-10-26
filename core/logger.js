@@ -61,13 +61,8 @@ function initializeLogger(window) {
   mainWindow = window;
   
   // Set the LOG_FILE path now that we're in the main process
-  try {
-    const { LOG_FILE: logFile } = require('config/constants');
-    LOG_FILE = logFile;
-  } catch (error) {
-    // Fallback if constants aren't available
-    LOG_FILE = path.join(__dirname, '..', 'data', 'temp', 'app.log');
-  }
+  const { LOG_FILE: logFile } = require('config/constants');
+  LOG_FILE = logFile;
 }
 
 // Set the logs window reference

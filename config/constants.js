@@ -2,6 +2,14 @@
 
 const path = require('path');
 
+// Application metadata
+const APP_NAME = 'HSMSE Homework Checker';
+const APP_NAME_SHORT = 'HSMSE HW';
+const APP_VERSION = '1.0.0';
+
+// UI file names (will be defined after directory constants)
+const HELP_FILENAME = 'help.html';
+
 // Check if we're running in development mode (npm start)
 let isDevelopment = false;
 try {
@@ -42,7 +50,7 @@ if (isDevelopment) {
     } else {
       // Renderer process without remote - use OS userData directory
       const os = require('os');
-      const appName = 'HSMSE HW';
+      const appName = APP_NAME_SHORT;
       
       // Cross-platform userData directory
       if (process.platform === 'darwin') {
@@ -73,6 +81,16 @@ const ACCESS_DIR = path.join(APP_DIR, 'access');
 const SCRAPERS_DIR = path.join(APP_DIR, 'scrapers');
 const WINDOWS_DIR = path.join(APP_DIR, 'windows');
 
+// UI file paths (defined after directory constants)
+const HELP_FILE_PATH = path.join(WINDOWS_DIR, HELP_FILENAME);
+const MAIN_HTML_PATH = path.join(APP_DIR, 'main.html');
+const SETTINGS_HTML_PATH = path.join(WINDOWS_DIR, 'settings.html');
+const LOGS_HTML_PATH = path.join(WINDOWS_DIR, 'logs.html');
+const ICON_PATH = path.join(APP_DIR, 'icon', 'hsmse-hw-icon.png');
+const HELP_CSS_PATH = path.join(WINDOWS_DIR, 'help.css');
+const OVERLAY_NOTIFICATION_HTML_PATH = path.join(WINDOWS_DIR, 'overlay-notification.html');
+const OVERLAY_NOTIFICATION_CSS_PATH = path.join(WINDOWS_DIR, 'overlay-notification.css');
+
 // Data directory paths
 const DATA_DIR = path.join(APP_DIR, 'data');
 const TEMP_DIR = path.join(DATA_DIR, 'temp');
@@ -102,6 +120,18 @@ const BROWSER_VIEW_BOUNDS = {
 };
 
 module.exports = {
+  APP_NAME,
+  APP_NAME_SHORT,
+  APP_VERSION,
+  HELP_FILENAME,
+  HELP_FILE_PATH,
+  MAIN_HTML_PATH,
+  SETTINGS_HTML_PATH,
+  LOGS_HTML_PATH,
+  ICON_PATH,
+  HELP_CSS_PATH,
+  OVERLAY_NOTIFICATION_HTML_PATH,
+  OVERLAY_NOTIFICATION_CSS_PATH,
   APP_DIR,
   CORE_DIR,
   CONFIG_DIR,

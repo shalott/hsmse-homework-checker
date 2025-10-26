@@ -4,6 +4,14 @@ const { createAssignmentObject } = require('scrapers/assignment-utils');
 const fs = require('fs');
 const path = require('path');
 
+// Helper function to check if scraping has been canceled
+function checkScrapingCanceled() {
+  // Access the global cancellation flag from main process
+  if (global.isScrapingCanceled && global.isScrapingCanceled()) {
+    throw new Error('Scraping canceled by user');
+  }
+}
+
 /**
  * A helper function to introduce a delay.
  * @param {number} ms - Milliseconds to wait.
@@ -337,10 +345,16 @@ function parseTsvForAssignments(tsvData) {
  */
 async function scrapeGoogleSheets(browserView) {
   try {
+    // Check for cancellation before starting
+    checkScrapingCanceled();
+    
     logToRenderer('Starting Google Sheets TSV download process via keyboard...', 'info');
 
     // Set up the download listener BEFORE triggering the download.
     const tsvDataPromise = captureCsvDownload(browserView);
+
+    // Check for cancellation before triggering download
+    checkScrapingCanceled();
 
     // Trigger the download by simulating keyboard input.
     await triggerCsvDownloadViaKeyboard(browserView);
@@ -348,6 +362,9 @@ async function scrapeGoogleSheets(browserView) {
     // Wait for the download to be captured.
     const tsvData = await tsvDataPromise;
     logToRenderer('Successfully captured TSV data in memory.', 'success');
+
+    // Check for cancellation before parsing
+    checkScrapingCanceled();
 
     // Parse the data.
     const assignments = parseTsvForAssignments(tsvData);

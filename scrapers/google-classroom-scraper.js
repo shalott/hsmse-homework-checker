@@ -1,6 +1,14 @@
 const { logToRenderer } = require('core/logger');
 const { createAssignmentObject } = require('scrapers/assignment-utils');
 
+// Helper function to check if scraping has been canceled
+function checkScrapingCanceled() {
+  // Access the global cancellation flag from main process
+  if (global.isScrapingCanceled && global.isScrapingCanceled()) {
+    throw new Error('Scraping canceled by user');
+  }
+}
+
 // Generate URLs for a specific Google account
 function getGoogleClassroomUrls(accountNumber = 0) {
   return {
@@ -27,12 +35,18 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
     ];
     
     for (const tab of tabs) {
+      // Check for cancellation before each tab
+      checkScrapingCanceled();
+      
       logToRenderer(`[GoogleC] Scraping ${tab.label} assignments for account /u/${accountNumber}...`, 'info');
       
       // Step 1: Load the URL and wait for it to settle
       logToRenderer(`[GoogleC] Loading ${tab.label} tab...`, 'info');
       await browserView.webContents.loadURL(tab.url);
       await waitBriefly(1000); // Wait for page to load and settle
+      
+      // Check for cancellation after page load
+      checkScrapingCanceled();
       
       // Check if we were redirected to login page or wrong account
       const currentUrl = browserView.webContents.getURL();
@@ -58,7 +72,35 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       logToRenderer(`[GoogleC] Waiting for final content settlement on ${tab.label} tab...`, 'info');
       await waitBriefly(1000);
       
-      // Step 5: Extract assignments from the fully expanded page
+      // Step 5: Extract assignment counts for validation
+      logToRenderer(`[GoogleC] Extracting assignment counts for validation on ${tab.label} tab...`, 'info');
+      const countResult = await extractAssignmentCounts(browserView);
+      
+      // Step 6: Count total assignment links on the page (before filtering)
+      logToRenderer(`[GoogleC] Counting total assignment links on ${tab.label} tab...`, 'info');
+      const linkCountResult = await browserView.webContents.executeJavaScript(`
+        (function() {
+          const allLinks = document.querySelectorAll('a[href*="details"]');
+          return { totalLinks: allLinks.length };
+        })()
+      `);
+      
+      // Step 7: Validate assignment counts
+      if (countResult.total > 0) {
+        logToRenderer(`[GoogleC] Validating assignment counts on ${tab.label} tab: Expected ${countResult.total}, Found ${linkCountResult.totalLinks} assignment links`, 'info');
+        
+        if (linkCountResult.totalLinks !== countResult.total) {
+          const errorMsg = `Assignment count mismatch on ${tab.label} tab: Expected ${countResult.total} assignments but found ${linkCountResult.totalLinks} assignment links. Page may not have loaded completely.`;
+          logToRenderer(`[GoogleC] ${errorMsg}`, 'error');
+          return { success: false, error: errorMsg, assignments: [] };
+        } else {
+          logToRenderer(`[GoogleC] Assignment count validation passed on ${tab.label} tab`, 'success');
+        }
+      } else {
+        logToRenderer(`[GoogleC] No assignment counts found for validation on ${tab.label} tab - skipping count validation`, 'warn');
+      }
+      
+      // Step 8: Extract assignments from the fully expanded page
       logToRenderer(`[GoogleC] Extracting assignments from ${tab.label} tab...`, 'info');
       const basicAssignments = await extractAssignmentsFromExpandedPage(
         browserView, 
@@ -109,6 +151,64 @@ async function waitBriefly(milliseconds) {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+// Extract assignment counts from page headers for validation
+async function extractAssignmentCounts(browserView) {
+  logToRenderer(`[GoogleC] Extracting assignment counts from page headers...`, 'info');
+  
+  const result = await browserView.webContents.executeJavaScript(`
+    (function() {
+      const counts = [];
+      
+      // Look for h2 elements that contain section headers
+      const h2Elements = document.querySelectorAll('h2');
+      
+      for (const h2 of h2Elements) {
+        const text = h2.textContent.trim();
+        
+        // Check if this h2 contains one of the expected section headers
+        const sectionHeaders = ['No due date', 'This week', 'Next week', 'Last week', 'Later', 'Earlier', 'Done early'];
+        let isSectionHeader = false;
+        let sectionName = '';
+        
+        for (const header of sectionHeaders) {
+          if (text.includes(header)) {
+            isSectionHeader = true;
+            sectionName = header;
+            break;
+          }
+        }
+        
+        if (isSectionHeader) {
+          // Get the text content of the div containing the h2
+          const containerDiv = h2.closest('div');
+          if (containerDiv) {
+            const containerText = containerDiv.textContent.trim();
+            // Extract the number from the container text (should be after the section name)
+            const numberMatch = containerText.match(/(\\d+)/);
+            if (numberMatch) {
+              const count = parseInt(numberMatch[1], 10);
+              counts.push({ section: sectionName, count: count });
+            }
+          }
+        }
+      }
+      
+      // Calculate total count
+      const total = counts.reduce((sum, item) => sum + item.count, 0);
+      
+      return { counts, total };
+    })()
+  `);
+  
+  if (result.counts.length > 0) {
+    logToRenderer(`[GoogleC] Found assignment counts: ${result.counts.map(c => `${c.section}: ${c.count}`).join(', ')} (Total: ${result.total})`, 'info');
+  } else {
+    logToRenderer(`[GoogleC] No assignment counts found in page headers`, 'warn');
+  }
+  
+  return result;
 }
 
 async function expandPageContent(browserView) {

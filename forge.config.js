@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 
 module.exports = {
   packagerConfig: {
@@ -6,6 +7,7 @@ module.exports = {
     icon: path.resolve(__dirname, 'icon/hsmse-hw-icon'), // no extension for cross-platform
     name: 'HSMSE HW',
     executableName: 'HSMSE HW',
+    arch: ['x64', 'arm64'], // Build for both Intel and Apple Silicon Macs
     ignore: [
       /^secrets\//,
       /^data\//,
@@ -53,4 +55,14 @@ module.exports = {
       platforms: ['win32'],
     },
   ],
+  hooks: {
+    preMake: async (config, makeOptions) => {
+      // Clean the make output directory before building
+      const makeDir = path.join(__dirname, 'out', 'make');
+      if (fs.existsSync(makeDir)) {
+        console.log('Cleaning previous build artifacts...');
+        fs.rmSync(makeDir, { recursive: true, force: true });
+      }
+    }
+  }
 };

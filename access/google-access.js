@@ -39,12 +39,30 @@ async function showBrowserMessage(browserView, message) {
     }
     
     // Read CSS from external file
-    const cssPath = path.join(__dirname, '..', 'windows', 'auth-overlay.css');
-    const cssContent = fs.readFileSync(cssPath, 'utf8');
+    const { OVERLAY_NOTIFICATION_CSS_PATH } = require('../config/constants');
+    const cssContent = fs.readFileSync(OVERLAY_NOTIFICATION_CSS_PATH, 'utf8');
     logToRenderer(`CSS file read successfully, length: ${cssContent.length}`, 'info');
     
-    // Inject the CSS styles
-    await browserView.webContents.insertCSS(cssContent);
+    // Inject the CSS styles with animations
+    const cssWithAnimations = cssContent + \`
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes slideInScale {
+        from {
+          opacity: 0;
+          transform: translateY(-20px) scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+    \`;
+    
+    await browserView.webContents.insertCSS(cssWithAnimations);
     logToRenderer('CSS injected successfully', 'info');
 
     // Then inject the message overlay into the browser window (non-blocking)
@@ -59,35 +77,97 @@ async function showBrowserMessage(browserView, message) {
           }
           
           // Remove any existing message overlay
-          const existingOverlay = document.getElementById('auth-message-overlay');
+          const existingOverlay = document.getElementById('notification-overlay');
           if (existingOverlay) {
             existingOverlay.remove();
             console.log('Removed existing overlay');
           }
           
-          // Create message overlay using proper DOM methods
+          // Create notification overlay using new unified styling
           const overlay = document.createElement('div');
-          overlay.id = 'auth-message-overlay';
+          overlay.id = 'notification-overlay';
+          overlay.style.cssText = \`
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            animation: fadeIn 0.3s ease-out;
+          \`;
           
-          const messageBox = document.createElement('div');
-          messageBox.className = 'auth-message-box';
+          const notificationBox = document.createElement('div');
+          notificationBox.className = 'notification-box auth';
+          notificationBox.style.cssText = \`
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 450px;
+            text-align: center;
+            border-top: 4px solid #ff9500;
+            animation: slideInScale 0.4s ease-out;
+          \`;
           
-          const title = document.createElement('h3');
-          title.className = 'auth-message-title';
-          title.textContent = 'Authentication Required';
+          const icon = document.createElement('div');
+          icon.className = 'notification-icon';
+          icon.style.cssText = \`
+            font-size: 48px;
+            margin-bottom: 16px;
+            line-height: 1;
+            color: #ff9500;
+          \`;
+          icon.textContent = '🔐';
           
-          const messageText = document.createElement('p');
-          messageText.className = 'auth-message-text';
+          const header = document.createElement('div');
+          header.className = 'notification-header';
+          header.style.cssText = \`
+            font-size: 28px;
+            font-weight: 700;
+            color: #1d1d1f;
+            margin: 0 0 12px 0;
+            line-height: 1.2;
+          \`;
+          header.textContent = 'Authentication Required';
+          
+          const messageText = document.createElement('div');
+          messageText.className = 'notification-message';
+          messageText.style.cssText = \`
+            font-size: 18px;
+            color: #424245;
+            margin: 0 0 24px 0;
+            line-height: 1.4;
+            font-weight: 400;
+          \`;
           messageText.textContent = '${message.replace(/'/g, "\\'")}';
           
           const okButton = document.createElement('button');
           okButton.id = 'auth-ok-button';
+          okButton.className = 'notification-button';
+          okButton.style.cssText = \`
+            background: #007aff;
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: background-color 0.2s ease;
+            min-width: 100px;
+          \`;
           okButton.textContent = 'OK';
           
-          messageBox.appendChild(title);
-          messageBox.appendChild(messageText);
-          messageBox.appendChild(okButton);
-          overlay.appendChild(messageBox);
+          notificationBox.appendChild(icon);
+          notificationBox.appendChild(header);
+          notificationBox.appendChild(messageText);
+          notificationBox.appendChild(okButton);
+          overlay.appendChild(notificationBox);
           document.body.appendChild(overlay);
           
           console.log('Authentication overlay created and added to DOM');

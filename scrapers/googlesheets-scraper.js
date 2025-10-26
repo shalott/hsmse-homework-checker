@@ -1,5 +1,6 @@
 const { logToRenderer } = require('core/logger');
 const { TEMP_DIR } = require('config/constants');
+const { createAssignmentObject } = require('scrapers/assignment-utils');
 const fs = require('fs');
 const path = require('path');
 
@@ -245,9 +246,15 @@ function parseTsvForAssignments(tsvData) {
         
         // Only add if due date is within acceptable range (not more than 3 days past)
         if (dueDate >= cutoffDate) {
-          pendingHw.due_date = dueDate;
-          pendingHw.due_date_parsed = dueDate.toISOString();
-          assignments.push(pendingHw);
+          const assignment = createAssignmentObject(
+            pendingHw.name,
+            pendingHw.class,
+            dueDate.toLocaleDateString(),
+            pendingHw.url,
+            pendingHw.description,
+            pendingHw.max_points
+          );
+          assignments.push(assignment);
           logToRenderer(`    -> HW added (due date is within range)`, 'info');
         } else {
           logToRenderer(`    -> HW skipped (due date too old: ${dueDate.toLocaleDateString()})`, 'info');
@@ -263,15 +270,15 @@ function parseTsvForAssignments(tsvData) {
       // Check for TEST
       if (cellContent.toUpperCase().includes('TEST')) {
         logToRenderer(`    -> Found TEST`, 'info');
-        assignments.push({
-          name: 'Geometry Test',
-          class: courseName,
-          due_date: cellDate,
-          due_date_parsed: cellDate.toISOString(),
-          url: '',
-          description: cellContent,
-          max_points: 0
-        });
+        const assignment = createAssignmentObject(
+          'Geometry Test',
+          courseName,
+          cellDate.toLocaleDateString(),
+          '',
+          cellContent,
+          0
+        );
+        assignments.push(assignment);
       }
       
       // Check for HW
@@ -286,15 +293,15 @@ function parseTsvForAssignments(tsvData) {
           logToRenderer(`    -> HW has explicit due date: ${explicitDueDate.toLocaleDateString()}`, 'info');
           // Homework has explicit due date, add it if within cutoff range
           if (explicitDueDate >= cutoffDate) {
-            assignments.push({
-              name: hwMatch[0],
-              class: courseName,
-              due_date: explicitDueDate,
-              due_date_parsed: explicitDueDate.toISOString(),
-              url: '',
-              description: `Assigned ${weekdayNames[dayIndex]}, ${cellDate.toLocaleDateString()}`,
-              max_points: 0
-            });
+            const assignment = createAssignmentObject(
+              hwMatch[0],
+              courseName,
+              explicitDueDate.toLocaleDateString(),
+              '',
+              `Assigned ${weekdayNames[dayIndex]}, ${cellDate.toLocaleDateString()}`,
+              0
+            );
+            assignments.push(assignment);
             logToRenderer(`    -> HW added (explicit due date is within range)`, 'info');
           } else {
             logToRenderer(`    -> HW skipped (explicit due date too old: ${explicitDueDate.toLocaleDateString()})`, 'info');
@@ -305,8 +312,6 @@ function parseTsvForAssignments(tsvData) {
           pendingHw = {
             name: hwMatch[0],
             class: courseName,
-            due_date: null, // Will be set when we find next class date
-            due_date_parsed: null,
             url: '',
             description: `Assigned ${weekdayNames[dayIndex]}, ${cellDate.toLocaleDateString()}`,
             max_points: 0

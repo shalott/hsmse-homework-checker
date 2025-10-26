@@ -245,7 +245,7 @@ function parseTsvForAssignments(tsvData) {
         
         // Only add if due date is within acceptable range (not more than 3 days past)
         if (dueDate >= cutoffDate) {
-          pendingHw.due_date = dueDate.toISOString();
+          pendingHw.due_date = dueDate;
           pendingHw.due_date_parsed = dueDate.toISOString();
           assignments.push(pendingHw);
           logToRenderer(`    -> HW added (due date is within range)`, 'info');

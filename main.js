@@ -973,15 +973,11 @@ ipcMain.handle('test-jupiter-login', async (event, credentials) => {
     const result = await loginToJupiter(browserView, credentials, mainWindow);
     
     if (result.success) {
-      logToRenderer('Login test successful!', 'success');
-      
       // Check if Jupiter config exists, if not, automatically load classes
       const fs = require('fs');
       const { JUPITER_CONFIG_PATH } = require('config/constants');
       
       if (!fs.existsSync(JUPITER_CONFIG_PATH)) {
-        logToRenderer('No Jupiter class configuration found - automatically loading classes...', 'info');
-        
         // Auto-load classes
         const { getAvailableJupiterClasses } = require('scrapers/jupiter-scraper');
         const { handleJupiterAccess } = require('access/jupiter-access');
@@ -991,16 +987,15 @@ ipcMain.handle('test-jupiter-login', async (event, credentials) => {
           const classesResult = await getAvailableJupiterClasses(browserView);
           
           if (classesResult.success) {
-            logToRenderer('Classes loaded automatically!', 'success');
-          } else {
-            logToRenderer(`Auto-load classes failed: ${classesResult.error}`, 'error');
+            // Update the settings window to show the loaded classes
+            if (settingsWindow && settingsWindow.webContents) {
+              settingsWindow.webContents.send('classes-loaded');
+            }
           }
         } catch (autoLoadError) {
-          logToRenderer(`Auto-load classes error: ${autoLoadError.message}`, 'error');
+          // Silent fail - error will be handled by settings window
         }
       }
-    } else {
-      logToRenderer(`Login test failed: ${result.message}`, 'error');
     }
     
     return result;
@@ -1029,7 +1024,10 @@ ipcMain.handle('load-jupiter-classes', async () => {
     const classes = await getAvailableJupiterClasses(browserView);
     
     if (classes && classes.length > 0) {
-      logToRenderer(`Loaded ${classes.length} classes from Jupiter Ed`, 'success');
+      // Update the settings window to show the loaded classes
+      if (settingsWindow && settingsWindow.webContents) {
+        settingsWindow.webContents.send('classes-loaded');
+      }
       return { success: true, classes };
     } else {
       return { success: false, error: 'No classes found. Please check your login credentials.' };
@@ -1235,6 +1233,21 @@ ipcMain.on('switch-tab', (event, tabName) => {
 ipcMain.handle('get-assignments-file-path', () => {
   console.log(`[Main] Assignments file path requested: ${ASSIGNMENTS_FILE}`);
   return ASSIGNMENTS_FILE;
+});
+
+ipcMain.handle('get-assignments', async () => {
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(ASSIGNMENTS_FILE)) {
+      const data = fs.readFileSync(ASSIGNMENTS_FILE, 'utf8');
+      return JSON.parse(data);
+    } else {
+      return [];
+    }
+  } catch (error) {
+    console.error(`Error loading assignments: ${error.message}`);
+    return [];
+  }
 });
 
 ipcMain.handle('file-exists', (event, filePath) => {

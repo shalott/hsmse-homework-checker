@@ -116,10 +116,7 @@ function setupEventListeners() {
 
 // Set up IPC communication with main process
 function setupIpcListeners() {
-  // Listen for log messages
-  ipcRenderer.on('log-message', (event, data) => {
-    addLogEntry(data.message, data.type, data.timestamp);
-  });
+  // Log messages are handled by the logs window, not the main window
   
   // Listen for URL changes
   ipcRenderer.on('url-changed', (event, data) => {
@@ -181,19 +178,9 @@ async function handleUpdateAssignments() {
     const result = await ipcRenderer.invoke('start-unified-auth');
     
     if (result.success) {
-      addLogEntry(`Assignment update complete! Found ${result.totalAssignments || 0} assignments`, 'success');
-      if (result.googleAssignments) {
-        addLogEntry(`Google Classroom: ${result.googleAssignments} assignments`, 'info');
-      }
-      if (result.jupiterAssignments) {
-        addLogEntry(`Jupiter Ed: ${result.jupiterAssignments} assignments`, 'info');
-      }
+      // Success messages are logged by the main process
     } else {
-      if (result.error === 'Assignment Update Canceled') {
-        addLogEntry('Assignment Update Canceled', 'info');
-      } else {
-        addLogEntry(`Update failed: ${result.error}`, 'error');
-      }
+      // Error messages are logged by the main process
     }
     
     // Refresh assignment display and conditionally return to assignment view
@@ -208,7 +195,7 @@ async function handleUpdateAssignments() {
     // If there were failures, stay in scraping view so user can see error dialog
     
   } catch (error) {
-    addLogEntry(`Error during update: ${error.message}`, 'error');
+    // Error messages are logged by the main process
     // Still return to assignment view on error
     showAssignmentView();
   } finally {
@@ -226,10 +213,10 @@ async function handleUpdateAssignments() {
 async function handleCancelScraping() {
   try {
     await ipcRenderer.invoke('cancel-scraping');
-    addLogEntry('Assignment update canceled by user', 'info');
+    // Cancel message is logged by the main process
     showAssignmentView();
   } catch (error) {
-    addLogEntry(`Error canceling update: ${error.message}`, 'error');
+    // Error messages are logged by the main process
   }
 }
 
@@ -358,38 +345,7 @@ function setButtonLoading(button, loading, loadingText = 'Loading...') {
   }
 }
 
-// Add a log entry to the logs display
-function addLogEntry(message, type = 'info', timestamp = null) {
-  const entry = {
-    message,
-    type,
-    timestamp: timestamp || new Date().toLocaleTimeString()
-  };
-  
-  AppState.logs.push(entry);
-  
-  // Create log element
-  const logElement = document.createElement('div');
-  logElement.className = `log-entry ${type}`;
-  logElement.textContent = `[${entry.timestamp}] ${entry.message}`;
-  
-  // Add to log container
-  elements.logContainer.appendChild(logElement);
-  
-  // Auto-scroll to bottom
-  elements.logContainer.scrollTop = elements.logContainer.scrollHeight;
-  
-  // Limit log entries to prevent memory issues
-  const maxLogs = 1000;
-  if (AppState.logs.length > maxLogs) {
-    AppState.logs = AppState.logs.slice(-maxLogs);
-    // Remove old DOM elements
-    const logEntries = elements.logContainer.children;
-    while (logEntries.length > maxLogs) {
-      elements.logContainer.removeChild(logEntries[0]);
-    }
-  }
-}
+// Logging is handled by the logs window, not the main window
 
 // Update the current URL in the status bar
 function updateCurrentUrl(url) {
@@ -426,7 +382,6 @@ if (typeof module !== 'undefined' && module.exports) {
     toggleLogsPane,
     showAssignmentView,
     showBrowserView,
-    addLogEntry,
     updateCurrentUrl
   };
 }

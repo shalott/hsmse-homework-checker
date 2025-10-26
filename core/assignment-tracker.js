@@ -37,43 +37,23 @@ class AssignmentTracker {
         logToRenderer('Starting to load assignments...', 'info');
         
         try {
-            const fs = require('fs');
-            const path = require('path');
+            // Use IPC to get assignments from main process
+            const { ipcRenderer } = require('electron');
+            const assignments = await ipcRenderer.invoke('get-assignments');
             
-            // Use the DATA_DIR constant for proper path resolution
-            const assignmentsPath = path.join(DATA_DIR, 'all_assignments.json');
-            logToRenderer(`Assignments file path: ${assignmentsPath}`, 'info');
-            
-            // Check if file exists
-            const fileExists = fs.existsSync(assignmentsPath);
-            logToRenderer(`File exists: ${fileExists}`, 'info');
-            
-            if (fileExists) {
-                logToRenderer('Reading assignments file...', 'info');
-                const fileData = fs.readFileSync(assignmentsPath, 'utf8');
-                logToRenderer(`File data length: ${fileData.length} characters`, 'info');
+            if (assignments && assignments.length > 0) {
+                this.assignments = assignments;
+                logToRenderer(`Loaded ${this.assignments.length} assignments from file`, 'success');
                 
-                if (fileData && fileData.trim()) {
-                    logToRenderer('Parsing JSON data...', 'info');
-                    this.assignments = JSON.parse(fileData);
-                    logToRenderer(`Successfully parsed ${this.assignments.length} assignments`, 'success');
-                    
-                    // Log first assignment as sample
-                    if (this.assignments.length > 0) {
-                        logToRenderer(`Sample assignment: ${this.assignments[0].name} (${this.assignments[0].class})`, 'info');
-                    }
-                    
-                    // Get file modification time
-                    const stats = fs.statSync(assignmentsPath);
-                    this.lastDataUpdate = stats.mtime;
-                    logToRenderer(`File last modified: ${this.lastDataUpdate.toLocaleString()}`, 'info');
-                } else {
-                    logToRenderer('File was empty or contained only whitespace', 'warn');
-                    this.assignments = [];
-                    this.lastDataUpdate = null;
+                // Log first assignment as sample
+                if (this.assignments.length > 0) {
+                    logToRenderer(`Sample assignment: ${this.assignments[0].name} (${this.assignments[0].class})`, 'info');
                 }
+                
+                // Set a reasonable last update time
+                this.lastDataUpdate = new Date();
             } else {
-                logToRenderer('Assignments file does not exist, starting with empty list', 'warn');
+                logToRenderer('No assignments found, using empty array', 'warn');
                 this.assignments = [];
                 this.lastDataUpdate = null;
             }
@@ -86,8 +66,6 @@ class AssignmentTracker {
             if (this.classColorMap.size > 0) {
                 logToRenderer(`Classes found: ${Array.from(this.classColorMap.keys()).join(', ')}`, 'info');
             }
-            
-
             
         } catch (error) {
             logToRenderer(`Error loading assignments: ${error.message}`, 'error');
@@ -344,23 +322,25 @@ class AssignmentTracker {
         dot.className = 'assignment-dot';
         dot.style.cursor = 'pointer';
         
-        // Check if assignment is overdue
+        // Set background color to course color
+        const colorClass = this.getClassColorClass(assignment.class);
+        dot.classList.add(colorClass);
+        
+        // Check if assignment is overdue or upcoming
         const now = new Date();
         if (assignment.due_date_parsed) {
             const dueDate = new Date(assignment.due_date_parsed);
             if (dueDate < now) {
                 dot.classList.add('overdue');
+            } else {
+                dot.classList.add('upcoming');
             }
         }
-        
-        const classDot = document.createElement('span');
-        classDot.className = `class-dot ${this.getClassColorClass(assignment.class)}`;
         
         const label = document.createElement('span');
         label.className = 'assignment-label';
         label.textContent = assignment.name;
         
-        dot.appendChild(classDot);
         dot.appendChild(label);
         
         dot.addEventListener('click', () => {
@@ -473,8 +453,8 @@ class AssignmentTracker {
         header.appendChild(meta);
 
         const classDiv = document.createElement('div');
-        classDiv.className = 'assignment-class';
-        classDiv.innerHTML = `<span class="class-dot ${this.getClassColorClass(assignment.class)}" style="display: inline-block; margin-right: 0.5rem;"></span>${assignment.class || 'Unknown Class'}`;
+        classDiv.className = `assignment-class ${this.getClassColorClass(assignment.class)}`;
+        classDiv.textContent = assignment.class || 'Unknown Class';
 
         const description = document.createElement('div');
         description.className = 'assignment-description';
@@ -500,8 +480,8 @@ class AssignmentTracker {
             }
         }
 
-        item.appendChild(header);
         item.appendChild(classDiv);
+        item.appendChild(header);
         if (assignment.description && assignment.description.trim()) {
             item.appendChild(description);
         }

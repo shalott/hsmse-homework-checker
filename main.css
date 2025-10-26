@@ -692,14 +692,16 @@ body {
 .assignment-dot {
   background: #3498db;
   color: white;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 0.7rem;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 4px;
   transition: transform 0.2s;
+  border: 2px solid #2980b9;
 }
 
 .assignment-dot:hover {
@@ -707,13 +709,11 @@ body {
 }
 
 .assignment-dot.overdue {
-  background: #e74c3c !important;
-  color: white;
-  border: 2px solid #c0392b;
+  border: 2px solid #e74c3c;
 }
 
-.assignment-dot.overdue .class-dot {
-  border-color: rgba(255, 255, 255, 0.3);
+.assignment-dot.upcoming {
+  border: 2px solid #3498db;
 }
 
 /* Calendar tooltip */
@@ -919,8 +919,12 @@ body {
 }
 
 .assignment-class {
-  color: #7f8c8d;
-  font-size: 0.9rem;
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 12px;
+  display: inline-block;
   margin-bottom: 0.5rem;
 }
 

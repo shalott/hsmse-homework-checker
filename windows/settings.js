@@ -17,6 +17,25 @@ const saveAppSettingsBtn = document.getElementById('save-app-settings');
 
 // Show status message
 function showStatus(message, type = 'info', scrollToMessage = false) {
+  // For success messages, use overlay instead of top status
+  if (type === 'success') {
+    const overlay = document.createElement('div');
+    overlay.className = 'local-success-overlay';
+    overlay.textContent = `✓ ${message}`;
+    
+    const container = document.querySelector('.settings-container');
+    container.appendChild(overlay);
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    }, 5000);
+    return;
+  }
+  
+  // For other message types, use the top status message
   statusMessage.textContent = message;
   statusMessage.className = `status-message status-${type}`;
   statusMessage.classList.remove('hidden');
@@ -31,43 +50,6 @@ function showStatus(message, type = 'info', scrollToMessage = false) {
   }, 5000);
 }
 
-// Show local success message right where the user is
-function showLocalSuccess(message, targetElementId) {
-  const targetElement = document.getElementById(targetElementId);
-  if (!targetElement) return;
-  
-  // Create a temporary success overlay
-  const overlay = document.createElement('div');
-  overlay.className = 'local-success-overlay';
-  overlay.innerHTML = `
-    <div class="local-success-content">
-      <div class="local-success-icon">✓</div>
-      <div class="local-success-message">${message}</div>
-    </div>
-  `;
-  
-  // Position it relative to the target element
-  const rect = targetElement.getBoundingClientRect();
-  const container = document.querySelector('.settings-container');
-  const containerRect = container.getBoundingClientRect();
-  
-  overlay.style.position = 'absolute';
-  overlay.style.top = `${rect.top - containerRect.top + rect.height + 10}px`;
-  overlay.style.left = '20px';
-  overlay.style.right = '20px';
-  overlay.style.zIndex = '1000';
-  
-  // Add to container
-  container.style.position = 'relative';
-  container.appendChild(overlay);
-  
-  // Remove after 5 seconds
-  setTimeout(() => {
-    if (overlay.parentNode) {
-      overlay.parentNode.removeChild(overlay);
-    }
-  }, 5000);
-}
 
 // Load existing credentials
 async function loadCredentials() {
@@ -155,8 +137,8 @@ credentialsForm.addEventListener('submit', async (e) => {
   try {
     await ipcRenderer.invoke('save-jupiter-credentials', credentials);
     
-    // Show local success message right in the credentials section
-    showLocalSuccess('Credentials saved successfully! Now continue to the Class Selection section below to choose which classes to scrape.', 'jupiter-credentials-header');
+    // Show success message using overlay
+    showStatus('Credentials saved successfully! Now continue to the Class Selection section below to choose which classes to scrape.', 'success');
     
     // Show the delete button after successful save
     const deleteBtn = document.getElementById('delete-credentials');
@@ -185,7 +167,9 @@ testCredentialsBtn.addEventListener('click', async () => {
     showStatus('Testing credentials... Opening Jupiter Ed login page', 'info');
     const result = await ipcRenderer.invoke('test-jupiter-login', credentials);
     if (result.success) {
-      showStatus('Login test successful! Saving credentials.', 'success', false);
+      showStatus('Login test successful! Credentials saved successfully! Now continue to the Class Selection section below to choose which classes to scrape.', 'success');
+      // Reload class selection to show any newly loaded classes
+      loadClassSelection();
     } else {
       showStatus(`Login test failed: ${result.error}. Check the browser window for details.`, 'error');
     }
@@ -409,6 +393,12 @@ ipcRenderer.on('scroll-to-jupiter-classes', () => {
       behavior: 'smooth'
     });
   }
+});
+
+// Handle classes loaded from test login
+ipcRenderer.on('classes-loaded', () => {
+  // Reload the class selection to show the newly loaded classes
+  loadClassSelection();
 });
 
 // Help icon functionality

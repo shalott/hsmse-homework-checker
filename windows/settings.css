@@ -280,13 +280,17 @@
 
 /* Local success overlay styles */
 .local-success-overlay {
-  position: absolute;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: linear-gradient(135deg, #27ae60, #2ecc71);
   color: white;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   animation: slideInFromTop 0.3s ease-out;
   z-index: 1000;
+  padding: 12px 16px;
 }
 
 .local-success-content {

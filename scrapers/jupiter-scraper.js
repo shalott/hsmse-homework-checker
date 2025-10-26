@@ -10,6 +10,8 @@ function loadJupiterClassesConfig() {
     const configData = fs.readFileSync(JUPITER_CONFIG_PATH, 'utf8');
     const config = JSON.parse(configData);
     
+    logToRenderer(`[Jupiter] Raw config loaded: ${JSON.stringify(config)}`, 'info');
+    
     // Filter out metadata fields and return only class selections
     const classSelections = {};
     for (const [key, value] of Object.entries(config)) {
@@ -17,6 +19,8 @@ function loadJupiterClassesConfig() {
         classSelections[key] = value;
       }
     }
+    
+    logToRenderer(`[Jupiter] Filtered class selections: ${JSON.stringify(classSelections)}`, 'info');
     
     return classSelections;
   } catch (error) {
@@ -66,9 +70,8 @@ function saveAvailableClassesToConfig(availableClasses) {
 
 // Filter available classes to only include selected ones
 function filterSelectedClasses(availableClasses, selectedClasses) {
-  const selectedClassNames = Object.keys(selectedClasses);
   const filtered = availableClasses.filter(classInfo => {
-    return selectedClassNames.includes(classInfo.name);
+    return selectedClasses[classInfo.name] === 'selected';
   });
   
   logToRenderer(`[Jupiter] Filtered from ${availableClasses.length} to ${filtered.length} selected classes`, 'info');

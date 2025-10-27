@@ -1,6 +1,6 @@
 {
   "name": "hsmse-hw",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Desktop application for scraping homework assignments from Google Classroom and Jupiter Ed",
   "main": "main.js",
   "scripts": {

@@ -33,6 +33,25 @@ If you're an actual end user, you would download one of the UNSIGNED releases an
 
 ## Current Architecture
 
+### Project Structure
+```
+├── core/           # Core application logic
+├── scrapers/       # Web scraping modules
+├── access/         # API access modules
+├── windows/        # UI windows and dialogs
+├── data/           # Data storage (excluded from git)
+├── secrets/        # Credentials (excluded from git)
+└── dist/           # Built applications (excluded from git)
+```
+
+### Available Scripts
+- `npm start` - Start development server
+- `npm run build` - Build for current platform
+- `npm run build:all` - Build for all platforms
+- `npm run build:mac` - Build for macOS
+- `npm run build:win` - Build for Windows
+
+
 ### Core Components
 
 - **Main Process** (`main.js`): Electron main process handling window management, IPC, and workflow coordination

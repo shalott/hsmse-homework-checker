@@ -23,12 +23,14 @@ try {
                  process.env.npm_lifecycle_event === 'start';
 }
 
-// Base application directory (project root)
-let userDataRoot;
+// Base application directory (where the app components live - always __dirname)
+const APP_DIR = path.resolve(__dirname, '..');
 
+// Data root directory (where generated files live)
+let DATA_ROOT;
 if (isDevelopment) {
   // Development mode: use local project directory
-  userDataRoot = path.resolve(__dirname, '..');
+  DATA_ROOT = path.resolve(__dirname, '..');
   console.log('Running in development mode, using local directories');
   console.log('Development mode detected because:', {
     NODE_ENV: process.env.NODE_ENV,
@@ -41,12 +43,12 @@ if (isDevelopment) {
     const electron = require('electron');
     if (electron.app) {
       // Main process
-      userDataRoot = electron.app.getPath('userData');
-      console.log('Running in production mode (main process), using userData directory:', userDataRoot);
+      DATA_ROOT = electron.app.getPath('userData');
+      console.log('Running in production mode (main process), using userData directory:', DATA_ROOT);
     } else if (electron.remote && electron.remote.app) {
       // Renderer process with remote
-      userDataRoot = electron.remote.app.getPath('userData');
-      console.log('Running in production mode (renderer process), using userData directory:', userDataRoot);
+      DATA_ROOT = electron.remote.app.getPath('userData');
+      console.log('Running in production mode (renderer process), using userData directory:', DATA_ROOT);
     } else {
       // Renderer process without remote - use OS userData directory
       const os = require('os');
@@ -55,26 +57,24 @@ if (isDevelopment) {
       // Cross-platform userData directory
       if (process.platform === 'darwin') {
         // macOS
-        userDataRoot = path.join(os.homedir(), 'Library', 'Application Support', appName);
+        DATA_ROOT = path.join(os.homedir(), 'Library', 'Application Support', appName);
       } else if (process.platform === 'win32') {
         // Windows
-        userDataRoot = path.join(os.homedir(), 'AppData', 'Roaming', appName);
+        DATA_ROOT = path.join(os.homedir(), 'AppData', 'Roaming', appName);
       } else {
         // Linux and others
-        userDataRoot = path.join(os.homedir(), '.config', appName);
+        DATA_ROOT = path.join(os.homedir(), '.config', appName);
       }
       
-      console.log('Running in production mode (renderer process), using OS userData directory:', userDataRoot);
+      console.log('Running in production mode (renderer process), using OS userData directory:', DATA_ROOT);
     }
   } catch (e) {
     console.log('Error getting userData root:', e);
-    userDataRoot = path.resolve(__dirname, '..');
+    DATA_ROOT = path.resolve(__dirname, '..');
   }
 }
 
-const APP_DIR = userDataRoot;
-
-// Core application directory paths
+// Core application directory paths (always use project root for modules)
 const CORE_DIR = path.join(APP_DIR, 'core');
 const CONFIG_DIR = path.join(APP_DIR, 'config');
 const ACCESS_DIR = path.join(APP_DIR, 'access');
@@ -92,9 +92,9 @@ const OVERLAY_NOTIFICATION_HTML_PATH = path.join(WINDOWS_DIR, 'overlay-notificat
 const OVERLAY_NOTIFICATION_CSS_PATH = path.join(WINDOWS_DIR, 'overlay-notification.css');
 
 // Data directory paths
-const DATA_DIR = path.join(APP_DIR, 'data');
+const DATA_DIR = path.join(DATA_ROOT, 'data');
 const TEMP_DIR = path.join(DATA_DIR, 'temp');
-const SECRETS_DIR = path.join(APP_DIR, 'secrets');
+const SECRETS_DIR = path.join(DATA_ROOT, 'secrets');
 const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
 
 // Main data files
@@ -133,6 +133,7 @@ module.exports = {
   OVERLAY_NOTIFICATION_HTML_PATH,
   OVERLAY_NOTIFICATION_CSS_PATH,
   APP_DIR,
+  DATA_ROOT,
   CORE_DIR,
   CONFIG_DIR,
   ACCESS_DIR,

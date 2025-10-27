@@ -239,14 +239,37 @@ async function handleCancelScraping() {
     const result = await ipcRenderer.invoke('cancel-scraping');
     console.log('Cancel result:', result);
     
-    // Show confirmation message
-    await ipcRenderer.invoke('show-cancel-confirmation');
+    // Clean up UI state first
+    // Hide progress indicator
+    if (elements.progressSection) {
+      elements.progressSection.style.display = 'none';
+    }
     
-    // Cancel message is logged by the main process
+    // Restore button to normal state
+    elements.updateAssignmentsBtn.disabled = false;
+    if (elements.updateAssignmentsBtn.dataset.originalText) {
+      elements.updateAssignmentsBtn.textContent = elements.updateAssignmentsBtn.dataset.originalText;
+      delete elements.updateAssignmentsBtn.dataset.originalText;
+    }
+    elements.updateAssignmentsBtn.classList.remove('btn-cancel');
+    
+    // Restore original click handler
+    elements.updateAssignmentsBtn.removeEventListener('click', handleCancelScraping);
+    elements.updateAssignmentsBtn.addEventListener('click', handleUpdateAssignments);
+    
+    // Return to assignment view
     showAssignmentView();
+    
+    // Show confirmation message AFTER cleanup
+    logToRenderer('Assignment update has been canceled.', 'info');
+    
+    // Show brief success notification using IPC
+    ipcRenderer.invoke('show-cancel-confirmation');
+    
   } catch (error) {
     console.error('Error canceling scraping:', error);
     // Error messages are logged by the main process
+    showAssignmentView();
   }
 }
 

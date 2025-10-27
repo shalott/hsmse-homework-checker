@@ -1965,10 +1965,12 @@ function updateSystemTrayMenu() {
   }
 }
 
-// Export functions for use by scheduler
+// Export functions for use by scheduler and app menu
 module.exports = {
   runScrapingProcess,
   markScrapingFailure,
-  markScrapingSuccess
+  markScrapingSuccess,
+  createLogsWindow,
+  createSettingsWindow
 };
 

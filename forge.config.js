@@ -13,7 +13,6 @@ module.exports = {
       /^data\//,
       /secrets\/jupiter_secret\.json$/,
       /data\/.*\.json$/,
-      /^old_python_tools\//,
       /assignment_extraction\.log$/,
       /\.log$/,
       /chromedriver$/,
@@ -24,7 +23,6 @@ module.exports = {
       /^release\//,
       /\.tmp$/,
       /\.temp$/,
-      /^HSMSE Assignments\//,
       /npm-debug\.log.*/,
       /yarn-debug\.log.*/,
       /yarn-error\.log.*/
@@ -36,6 +34,7 @@ module.exports = {
       config: {
         format: 'ULFO',
         icon: path.resolve(__dirname, 'icon/hsmse-hw-icon.icns'),
+        name: 'HSMSE HW-${arch}',
       },
     },
     {

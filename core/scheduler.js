@@ -89,13 +89,24 @@ class Scheduler {
 
     try {
       // Get the main window reference
-      const { BrowserWindow } = require('electron');
+      const { BrowserWindow, app } = require('electron');
       const mainWindow = BrowserWindow.getAllWindows().find(w => !w.isDestroyed());
       
       if (!mainWindow) {
         logToRenderer('No main window found for scheduled scraping', 'error');
         return;
       }
+      
+      // Show the main window for scheduled scraping (required for browser view to work)
+      mainWindow.show();
+      mainWindow.focus();
+      
+      // On macOS, show the dock icon again
+      if (process.platform === 'darwin') {
+        app.dock.show();
+      }
+      
+      logToRenderer('Main window shown for scheduled scraping', 'info');
       
       // Call the main scraping function via IPC
       const { ipcMain } = require('electron');

@@ -33,7 +33,16 @@ function createApplicationMenu() {
           label: 'Quit',
           accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
           click: () => {
-            app.quit();
+            // Hide to system tray (keep app running)
+            const { BrowserWindow, app } = require('electron');
+            const mainWindow = BrowserWindow.getFocusedWindow();
+            if (mainWindow) {
+              mainWindow.hide();
+              // On macOS, also hide the dock icon
+              if (process.platform === 'darwin') {
+                app.dock.hide();
+              }
+            }
           }
         }
       ]
@@ -208,7 +217,16 @@ function createApplicationMenu() {
           label: 'Quit',
           accelerator: 'Command+Q',
           click: () => {
-            app.quit();
+            // Hide to system tray (keep app running)
+            const { BrowserWindow, app } = require('electron');
+            const mainWindow = BrowserWindow.getFocusedWindow();
+            if (mainWindow) {
+              mainWindow.hide();
+              // On macOS, also hide the dock icon
+              if (process.platform === 'darwin') {
+                app.dock.hide();
+              }
+            }
           }
         }
       ]

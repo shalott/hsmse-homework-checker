@@ -232,6 +232,11 @@ async function initializeApp() {
       await checkForFailureAlerts();
     }, 2000);
     
+    // Check if this is first launch and show help
+    setTimeout(async () => {
+      await checkFirstLaunchAndShowHelp();
+    }, 3000); // Wait a bit longer to ensure everything is ready
+    
     console.log('App initialization completed successfully');
   } catch (error) {
     console.error('App initialization failed:', error);
@@ -1001,6 +1006,11 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
   }
 }
 
+// Handle success notification from renderer (after cleanup is complete)
+ipcMain.handle('show-success-notification', async (event, totalAssignments, breakdown) => {
+  await alertUserToUpdateSuccess(totalAssignments, breakdown);
+});
+
 // Handle log messages from renderer
 ipcMain.on('log-message', (event, { message, type, timestamp }) => {
   // Only log to console for debugging, not for user display
@@ -1239,16 +1249,7 @@ async function runScrapingProcess() {
     try {
       const result = await processWorkflowResults(finalGoogle0Result, finalGoogle1Result, finalJupiterResult, finalSheetsResult);
       
-      // Show success message if scraping completed successfully
-      if (result.success && result.totalAssignments > 0) {
-        const breakdown = {
-          google0Assignments: result.google0Assignments || 0,
-          google1Assignments: result.google1Assignments || 0,
-          jupiterAssignments: result.jupiterAssignments || 0,
-          sheetsAssignments: (finalSheetsResult && finalSheetsResult.success) ? finalSheetsResult.assignments.length : 0
-        };
-        await alertUserToUpdateSuccess(result.totalAssignments, breakdown);
-      }
+      // Don't show success message here - let the renderer handle it after cleanup
       
       return result;
     } catch (processingError) {
@@ -1574,30 +1575,60 @@ function createSystemTray() {
     // Set initial context menu
     updateSystemTrayMenu();
     
-    // Handle tray click (show/hide window)
-    systemTray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          mainWindow.focus();
-        }
-      }
-    });
-    
-    // Handle double click
-    systemTray.on('double-click', () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    });
+    // Don't handle tray click - users should use the context menu "Open" option
+    // This prevents accidental minimize/show behavior
     
     logToRenderer('System tray created successfully', 'info');
     
   } catch (error) {
     logToRenderer(`Error creating system tray: ${error.message}`, 'error');
+  }
+}
+
+// Check if this is first launch and show help window
+async function checkFirstLaunchAndShowHelp() {
+  try {
+    // Check if app settings file exists - if not, this is first launch
+    if (!fs.existsSync(APP_SETTINGS_FILE)) {
+      logToRenderer('First launch detected - showing help window', 'info');
+      
+      // Create and show help window
+      const { BrowserWindow } = require('electron');
+      const { APP_NAME, HELP_FILE_PATH, HELP_CSS_PATH } = require('config/constants');
+      
+      const helpWindow = new BrowserWindow({
+        width: 700,
+        height: 600,
+        resizable: true,
+        minimizable: true,
+        maximizable: true,
+        title: `About ${APP_NAME}`,
+        webPreferences: {
+          nodeIntegration: true,
+          contextIsolation: false
+        }
+      });
+      
+      // Load the help HTML file
+      helpWindow.loadFile(HELP_FILE_PATH);
+      
+      // Inject the CSS path into the HTML
+      helpWindow.webContents.once('dom-ready', () => {
+        helpWindow.webContents.executeJavaScript(`
+          const link = document.querySelector('link[href="help.css"]');
+          if (link) {
+            link.href = '${HELP_CSS_PATH.replace(/\\/g, '/')}';
+          }
+        `);
+      });
+      
+      // Show the window
+      helpWindow.show();
+      
+      logToRenderer('Help window opened for first-time user', 'success');
+    }
+  } catch (error) {
+    logToRenderer(`Error checking first launch: ${error.message}`, 'error');
   }
 }
 
@@ -1903,11 +1934,15 @@ function updateSystemTrayMenu() {
     // Create context menu with dynamic content
     const contextMenu = Menu.buildFromTemplate([
       {
-        label: 'Show App',
+        label: 'Open',
         click: () => {
           if (mainWindow) {
             mainWindow.show();
             mainWindow.focus();
+            // On macOS, show the dock icon again
+            if (process.platform === 'darwin') {
+              app.dock.show();
+            }
           }
         }
       },
@@ -1917,6 +1952,10 @@ function updateSystemTrayMenu() {
           if (mainWindow) {
             mainWindow.show();
             mainWindow.focus();
+            // On macOS, show the dock icon again
+            if (process.platform === 'darwin') {
+              app.dock.show();
+            }
             // Start scraping immediately
             try {
               await startScraping();

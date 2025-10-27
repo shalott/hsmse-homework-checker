@@ -205,6 +205,20 @@ async function handleUpdateAssignments() {
     // Only auto-switch to assignments view if the operation was successful
     if (result.success) {
       showAssignmentView();
+      
+      // Show success message AFTER cleanup is complete
+      if (result.totalAssignments > 0) {
+        const breakdown = {
+          google0Assignments: result.google0Assignments || 0,
+          google1Assignments: result.google1Assignments || 0,
+          jupiterAssignments: result.jupiterAssignments || 0,
+          sheetsAssignments: result.sheetsAssignments || 0
+        };
+        // Show success notification after all cleanup is done
+        setTimeout(() => {
+          ipcRenderer.invoke('show-success-notification', result.totalAssignments, breakdown);
+        }, 100);
+      }
     }
     // If there were failures, stay in scraping view so user can see error dialog
     

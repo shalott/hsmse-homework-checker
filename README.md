@@ -1,18 +1,35 @@
 # Homework Checker
 
-An Electron-based automated assignment tracker that scrapes assignments from Google Classroom and Jupiter Ed, providing a unified desktop application with integrated browser views, comprehensive logging, and robust pre-scraping validation.
+I have cobbled this together after finding it impossible to keep track of all the different sites where homework assignments are being posted for my kid at HSMSE, and I'm sharing it mostly for the help of other students and parents at the same school. It might possibly by useful for some other NYC public schools? It is a massive kludge that relies on scraping Google Classroom and Jupiter Ed with only student-level access, and will probably break if you look at it funny. 
 
-## Features
+This is a desktop tool that is written in node and based on Electron. It works on Mac (both M and Intel). It might work on Windows, who knows! All the data and all authentication lives only on your own local machine and nothing you enter gets uploaded anywhere else unless you do it yourself manually (don't). 
 
-- **Unified Desktop Application**: Electron-based GUI with dual-view system (assignments/scraping)
-- **Multi-platform Support**: Scrapes Google Classroom (multiple accounts) and Jupiter Ed
-- **Pre-scraping Validation**: Comprehensive checks for credentials, configuration, and directories before scraping
-- **Interactive Browser Views**: Embedded browser for handling authentication and scraping workflows
-- **Real-time Logging**: Dual logging system with in-app display and file output for debugging
-- **Assignment Calendar**: Visual calendar interface showing due dates and assignment distribution
-- **Smart Categorization**: Separates assigned, missing, and completed assignments with intelligent parsing
-- **Secure Credential Management**: Encrypted storage of login credentials with validation
-- **Auto-switching Views**: Seamless transitions between assignment viewing and scraping operations
+There's a very basic help file and logs that might help you if something goes wrong. Zero support is offered, no warrantability, no guarantees, this probably isn't even fit for its actual purpose, etc. 
+
+Pull requests are welcome if you want something fixed or to add a different site, and if you want to be a maintainer you're super welcome, just drop me a line. 
+
+## Setup & Usage
+
+### Install 
+
+If you're an actual end user, you would download one of the UNSIGNED releases and run it on your system. Because the app is unsigned, you will be warned that it is evil and horrible and is going to destroy your machine. It won't, but you will have to mess around with settings to get your system to let you. 
+
+#### Mac (as of Tahoe)
+- Run the app
+- Be told you can't. Close the window (don't delete the app)
+- Quickly go to Security in System Settings and scroll until you see a button offering to let you "Open Anyway"
+- Now it will work! If this doesn't work you need to google how to run unsigned apps on your system.
+
+#### Windows
+- I don't know for sure, but I think you'll be asked to let it run anyway and can just choose to do so. 
+
+### Operation
+
+1. Click "Update Assignments" to begin the process (it will take a while)
+2. Look at the Help menu if you're confused 
+3. Hopefully you will see assignments in the calendar 
+
+# Technical Details 
 
 ## Current Architecture
 
@@ -49,22 +66,14 @@ An Electron-based automated assignment tracker that scrapes assignments from Goo
 4. **UI Updates**: Auto-switches to assignments view with calendar and statistics
 5. **Logging**: Comprehensive logging to both UI and `data/temp/app.log`
 
-## Setup & Usage
+### Installation & Running In Development
 
-### Installation
+This is only if you've installed the source code itself
 
 ```bash
 npm install
 npm start
 ```
-
-### Operation
-
-1. Click "Update Assignments" to begin the process
-2. System runs pre-scraping checks and prompts for any missing credentials
-3. Automatically switches to scraping view to show browser activity
-4. Sequential scraping of all platforms with real-time logging
-5. Auto-switches to assignments view showing results in calendar format
 
 ### Data Format
 
@@ -88,16 +97,6 @@ npm start
 }
 ```
 
-## Development Status
-
-- ✅ **Core Infrastructure**: Electron app with dual-view system
-- ✅ **Pre-scraping Validation**: Comprehensive validation before scraping
-- ✅ **Google Classroom**: Multi-account scraping with authentication
-- ✅ **Jupiter Ed**: Full integration with credential management
-- ✅ **Logging System**: Dual-output logging with file persistence
-- ✅ **Assignment Calendar**: Visual calendar with statistics
-- 🔄 **NYCSTUD Integration**: Python scraper integration (partial)
-
 ## License
 
-Private project - All rights reserved.
+This has been slapped together fast with a lot of help from my pals Claude, Gemini, and GPT, so I don't recommend relying on it for anything other than MAYBE what I've designed it for, and it will break the next time Google Classroom changes their layout. Consider it under the GPL 3 if you like. 

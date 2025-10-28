@@ -842,7 +842,7 @@ async function setupJupiterBrowser() {
 
 // Process results from all workflows and combine them
 async function processWorkflowResults(google0Result, google1Result, jupiterResult, sheetsResult) {
-  const allAssignments = [];
+  let allAssignments = [];
   let totalGoogleAssignments = 0;
   
   try {

@@ -86,7 +86,12 @@ const HELP_FILE_PATH = path.join(WINDOWS_DIR, HELP_FILENAME);
 const MAIN_HTML_PATH = path.join(APP_DIR, 'main.html');
 const SETTINGS_HTML_PATH = path.join(WINDOWS_DIR, 'settings.html');
 const LOGS_HTML_PATH = path.join(WINDOWS_DIR, 'logs.html');
-const ICON_PATH = path.join(APP_DIR, 'icon', 'hsmse-hw-icon.png');
+// Use platform-specific icon files
+const ICON_PATH = process.platform === 'darwin' 
+  ? path.join(APP_DIR, 'icon', 'hsmse-hw-icon.icns')
+  : process.platform === 'win32'
+  ? path.join(APP_DIR, 'icon', 'hsmse-hw-icon.ico')
+  : path.join(APP_DIR, 'icon', 'hsmse-hw-icon.png');
 const HELP_CSS_PATH = path.join(WINDOWS_DIR, 'help.css');
 const OVERLAY_NOTIFICATION_HTML_PATH = path.join(WINDOWS_DIR, 'overlay-notification.html');
 const OVERLAY_NOTIFICATION_CSS_PATH = path.join(WINDOWS_DIR, 'overlay-notification.css');

@@ -53,6 +53,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    icon: ICON_PATH,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
@@ -438,11 +439,34 @@ async function showOverlayNotification(type, header, message, icon = '🎉') {
               okButton.style.background = '#007aff';
             });
             
+            // Handle keyboard events to dismiss overlay
+            const handleKeyDown = (event) => {
+              if (event.key === 'Enter' || event.key === 'Escape' || event.key === ' ') {
+                event.preventDefault();
+                event.stopPropagation();
+                overlay.remove();
+                document.removeEventListener('keydown', handleKeyDown);
+                resolve();
+              }
+            };
+            
+            // Cleanup function to remove event listener
+            const cleanup = () => {
+              document.removeEventListener('keydown', handleKeyDown);
+            };
+            
             // Handle OK button click
             okButton.addEventListener('click', () => {
+              cleanup();
               overlay.remove();
               resolve();
             });
+            
+            // Add keyboard event listener
+            document.addEventListener('keydown', handleKeyDown);
+            
+            // Focus the OK button to prevent the Update Assignments button from being triggered
+            okButton.focus();
             
             // Assemble the overlay
             notificationBox.appendChild(iconEl);
@@ -905,6 +929,18 @@ async function processWorkflowResults(google0Result, google1Result, jupiterResul
       // Hide browser view before showing alert
       mainWindow.setBrowserView(null);
       await alertUserToUpdateFailure();
+      
+      // Return early when there are failures - don't continue processing
+      return {
+        success: false,
+        error: 'Some scrapers failed',
+        totalAssignments: allAssignments.length,
+        google0Assignments: google0Result.success ? google0Result.assignments.length : 0,
+        google1Assignments: google1Result.success ? google1Result.assignments.length : 0,
+        jupiterAssignments: jupiterResult.success ? jupiterResult.assignments.length : 0,
+        assignments: allAssignments,
+        integratedWorkflows: true
+      };
     } else {
       logToRenderer('All scrapers completed successfully', 'success');
     }

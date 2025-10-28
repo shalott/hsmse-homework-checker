@@ -1170,6 +1170,9 @@ async function runScrapingProcess() {
       } else {
         results.push({ type: 'google0', result: retryGoogle0Result });
       }
+      
+      // Update the local variable as well
+      google0Result = retryGoogle0Result;
     }
     
     // Run Google /u/1 workflow (if enabled)
@@ -1201,6 +1204,9 @@ async function runScrapingProcess() {
         } else {
           results.push({ type: 'google1', result: retryGoogle1Result });
         }
+        
+        // Update the local variable as well
+        google1Result = retryGoogle1Result;
       }
     } else {
       logToRenderer('Skipping Google /u/1 workflow (disabled in settings)', 'info');

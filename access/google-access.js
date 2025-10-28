@@ -44,7 +44,7 @@ async function showBrowserMessage(browserView, message) {
     logToRenderer(`CSS file read successfully, length: ${cssContent.length}`, 'info');
     
     // Inject the CSS styles with animations
-    const cssWithAnimations = cssContent + \`
+    const cssWithAnimations = cssContent + `
       @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
@@ -60,7 +60,7 @@ async function showBrowserMessage(browserView, message) {
           transform: translateY(0) scale(1);
         }
       }
-    \`;
+    `;
     
     await browserView.webContents.insertCSS(cssWithAnimations);
     logToRenderer('CSS injected successfully', 'info');

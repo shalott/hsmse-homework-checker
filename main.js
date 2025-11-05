@@ -1604,9 +1604,36 @@ async function initializeScheduler() {
 // Create system tray
 function createSystemTray() {
   try {
-    // Create tray icon from the app icon
-    const iconPath = ICON_PATH;
+    // System tray icons work best with PNG files, not ICNS
+    // Try multiple possible paths for the icon
+    let iconPath;
+    const possiblePaths = [
+      // Try app.getAppPath() first (works in both dev and production)
+      path.join(app.getAppPath(), 'icon', 'hsmse-hw-icon.png'),
+      // Try __dirname (main process location)
+      path.join(__dirname, 'icon', 'hsmse-hw-icon.png'),
+      // Try APP_DIR (development)
+      path.join(APP_DIR, 'icon', 'hsmse-hw-icon.png'),
+      // Try process.resourcesPath (production)
+      app.isPackaged ? path.join(process.resourcesPath, 'app', 'icon', 'hsmse-hw-icon.png') : null
+    ].filter(p => p !== null);
+    
+    // Find the first path that exists
+    iconPath = possiblePaths.find(p => fs.existsSync(p));
+    
+    if (!iconPath) {
+      logToRenderer(`System tray icon not found in any of these locations: ${possiblePaths.join(', ')}`, 'error');
+      return;
+    }
+    
+    logToRenderer(`Creating system tray icon from: ${iconPath}`, 'info');
     const trayIcon = nativeImage.createFromPath(iconPath);
+    
+    // Check if icon was loaded successfully
+    if (trayIcon.isEmpty()) {
+      logToRenderer(`Failed to load system tray icon from: ${iconPath}`, 'error');
+      return;
+    }
     
     // Resize icon for system tray (16x16 or 32x32 depending on platform)
     const resizedIcon = trayIcon.resize({ width: 16, height: 16 });
@@ -1620,10 +1647,11 @@ function createSystemTray() {
     // Don't handle tray click - users should use the context menu "Open" option
     // This prevents accidental minimize/show behavior
     
-    logToRenderer('System tray created successfully', 'info');
+    logToRenderer('System tray created successfully', 'success');
     
   } catch (error) {
     logToRenderer(`Error creating system tray: ${error.message}`, 'error');
+    logToRenderer(`Error stack: ${error.stack}`, 'error');
   }
 }
 

@@ -48,11 +48,32 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       // Check for cancellation after page load
       checkScrapingCanceled();
       
-      // Check if we were redirected to login page or wrong account
+      // Get the current URL after navigation
       const currentUrl = browserView.webContents.getURL();
-      if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
-        logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
-        return { success: false, needsAuth: true, error: 'Authentication required', assignments: [] };
+      logToRenderer(`[GoogleC] Current URL after navigation: ${currentUrl}`, 'info');
+      
+      // Check if we are actually on a Google Classroom URL
+      const isGoogleClassroomUrl = currentUrl.includes('classroom.google.com');
+      
+      // Check if we were redirected to any login/SSO page
+      const isLoginPage = currentUrl.includes('accounts.google.com') || 
+                         currentUrl.includes('signin') ||
+                         currentUrl.includes('login') ||
+                         currentUrl.includes('auth') ||
+                         currentUrl.includes('idpcloud.nycenet.edu') ||
+                         currentUrl.includes('oauth');
+      
+      // NEVER attempt to scrape unless we're on a Google Classroom URL
+      if (!isGoogleClassroomUrl) {
+        if (isLoginPage) {
+          logToRenderer(`[GoogleC] Redirected to login/SSO page: ${currentUrl}`, 'warn');
+          logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
+          return { success: false, needsAuth: true, error: 'Authentication required - redirected to login page', assignments: [] };
+        } else {
+          logToRenderer(`[GoogleC] Redirected to unexpected URL: ${currentUrl}`, 'warn');
+          logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
+          return { success: false, needsAuth: true, error: `Unexpected redirect to ${currentUrl}`, assignments: [] };
+        }
       }
       
       // Check if we were redirected to the wrong account (e.g., trying to access /u/1 but got /u/0)
@@ -437,6 +458,15 @@ async function extractAssignmentDetails(browserView, assignmentUrl) {
     logToRenderer(`[GoogleC] Visiting details page: ${assignmentUrl}`, 'info');
     await browserView.webContents.loadURL(assignmentUrl);
     await waitBriefly(1000); // Wait for page to load
+    
+    // Check if we're actually on a Google Classroom URL before attempting to extract
+    const currentUrl = browserView.webContents.getURL();
+    const isGoogleClassroomUrl = currentUrl.includes('classroom.google.com');
+    
+    if (!isGoogleClassroomUrl) {
+      logToRenderer(`[GoogleC] Redirected away from Google Classroom when visiting details page: ${currentUrl}`, 'warn');
+      return { description: '', maxPoints: 0, dueDate: '' };
+    }
     
     // Extract all the details in one JavaScript execution
     const details = await browserView.webContents.executeJavaScript(`

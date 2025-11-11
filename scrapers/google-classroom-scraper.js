@@ -1,6 +1,9 @@
 const { logToRenderer } = require('core/logger');
 const { createAssignmentObject } = require('scrapers/assignment-utils');
 
+// Section headers used for organizing assignments on Google Classroom pages
+const SECTION_HEADERS = ['No due date', 'This week', 'Next week', 'Last week', 'Later', 'Earlier', 'Done early'];
+
 // Helper function to check if scraping has been canceled
 function checkScrapingCanceled() {
   // Access the global cancellation flag from main process
@@ -82,20 +85,24 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
         return { success: false, needsAuth: true, error: 'Wrong account - need to switch accounts', assignments: [] };
       }
       
-      // Step 3: Expand all content on this tab
-      logToRenderer(`[GoogleC] Expanding content on ${tab.label} tab...`, 'info');
-      const expansionResult = await expandPageContent(browserView);
-      if (expansionResult.earlierClicks > 0 || expansionResult.viewAllClicks > 0) {
-        logToRenderer(`[GoogleC] Expanded ${tab.label} content: ${expansionResult.earlierClicks} Earlier buttons, ${expansionResult.viewAllClicks} View All buttons`, 'info');
-      }
-      
-      // Step 4: Wait a bit more for any final content to settle
-      logToRenderer(`[GoogleC] Waiting for final content settlement on ${tab.label} tab...`, 'info');
-      await waitBriefly(1000);
-      
-      // Step 5: Extract assignment counts for validation
+      // Step 3: Extract assignment counts for validation
       logToRenderer(`[GoogleC] Extracting assignment counts for validation on ${tab.label} tab...`, 'info');
       const countResult = await extractAssignmentCounts(browserView);
+      
+      // Step 4: Expand all content on this tab
+      logToRenderer(`[GoogleC] Expanding content on ${tab.label} tab...`, 'info');
+      for (const sectionHeader of SECTION_HEADERS) {
+        if (countResult.countsBySection[sectionHeader] > 5) {
+          const expansionResult = await expandPageContent(browserView, sectionHeader);
+          if (expansionResult.expandedClicks > 0 || expansionResult.viewAllClicks > 0) {
+            logToRenderer(`[GoogleC] Expanded ${sectionHeader} section: ${expansionResult.expandedClicks} expansion buttons, ${expansionResult.viewAllClicks} View All buttons`, 'info');
+          }
+        }
+      }
+      
+      // Step 5: Wait a bit more for any final content to settle
+      logToRenderer(`[GoogleC] Waiting for final content settlement on ${tab.label} tab...`, 'info');
+      await waitBriefly(300);
       
       // Step 6: Count total assignment links on the page (before filtering)
       logToRenderer(`[GoogleC] Counting total assignment links on ${tab.label} tab...`, 'info');
@@ -178,9 +185,17 @@ async function waitBriefly(milliseconds) {
 async function extractAssignmentCounts(browserView) {
   logToRenderer(`[GoogleC] Extracting assignment counts from page headers...`, 'info');
   
+  const sectionHeadersJson = JSON.stringify(SECTION_HEADERS);
+  
   const result = await browserView.webContents.executeJavaScript(`
     (function() {
-      const counts = [];
+      const sectionHeaders = ${sectionHeadersJson};
+      const countsBySection = {};
+      
+      // Initialize all sections to 0
+      for (const header of sectionHeaders) {
+        countsBySection[header] = 0;
+      }
       
       // Look for h2 elements that contain section headers
       const h2Elements = document.querySelectorAll('h2');
@@ -189,7 +204,6 @@ async function extractAssignmentCounts(browserView) {
         const text = h2.textContent.trim();
         
         // Check if this h2 contains one of the expected section headers
-        const sectionHeaders = ['No due date', 'This week', 'Next week', 'Last week', 'Later', 'Earlier', 'Done early'];
         let isSectionHeader = false;
         let sectionName = '';
         
@@ -210,21 +224,25 @@ async function extractAssignmentCounts(browserView) {
             const numberMatch = containerText.match(/(\\d+)/);
             if (numberMatch) {
               const count = parseInt(numberMatch[1], 10);
-              counts.push({ section: sectionName, count: count });
+              countsBySection[sectionName] = count;
             }
           }
         }
       }
       
       // Calculate total count
-      const total = counts.reduce((sum, item) => sum + item.count, 0);
+      const total = Object.values(countsBySection).reduce((sum, count) => sum + count, 0);
       
-      return { counts, total };
+      return { countsBySection, total };
     })()
   `);
   
-  if (result.counts.length > 0) {
-    logToRenderer(`[GoogleC] Found assignment counts: ${result.counts.map(c => `${c.section}: ${c.count}`).join(', ')} (Total: ${result.total})`, 'info');
+  if (result.total > 0) {
+    const countsList = Object.entries(result.countsBySection)
+      .filter(([_, count]) => count > 0)
+      .map(([section, count]) => `${section}: ${count}`)
+      .join(', ');
+    logToRenderer(`[GoogleC] Found assignment counts: ${countsList} (Total: ${result.total})`, 'info');
   } else {
     logToRenderer(`[GoogleC] No assignment counts found in page headers`, 'warn');
   }
@@ -232,16 +250,19 @@ async function extractAssignmentCounts(browserView) {
   return result;
 }
 
-async function expandPageContent(browserView) {
-  // Handle "Earlier" buttons - these show older assignments
-  const earlierResult = await browserView.webContents.executeJavaScript(`
+async function expandPageContent(browserView, sectionHeader) {
+  // Handle expansion buttons for the specified section header
+  const sectionHeaderJson = JSON.stringify(sectionHeader);
+  
+  const expandedResult = await browserView.webContents.executeJavaScript(`
     (function() {
-      const earlierButtons = document.querySelectorAll('button[aria-label*="Earlier"]');
+      const sectionHeader = ${sectionHeaderJson};
+      const expansionButtons = document.querySelectorAll('button[aria-label*="' + sectionHeader + '"]');
       let clickCount = 0;
       const clickedButtons = [];
       const skippedButtons = [];
       
-      for (const button of earlierButtons) {
+      for (const button of expansionButtons) {
         if (button.offsetParent !== null) { // Check if button is visible
           try {
             const ariaLabel = button.getAttribute('aria-label');
@@ -265,18 +286,19 @@ async function expandPageContent(browserView) {
     })()
   `);
   
-  if (earlierResult.clickCount > 0) {
-    logToRenderer(`[GoogleC] Clicked ${earlierResult.clickCount} Earlier buttons: ${earlierResult.clickedButtons.join(', ')}`, 'info');
-    await waitBriefly(1000);
+  if (expandedResult.clickCount > 0) {
+    logToRenderer(`[GoogleC] Clicked ${expandedResult.clickCount} ${sectionHeader} expansion buttons: ${expandedResult.clickedButtons.join(', ')}`, 'info');
+    await waitBriefly(200);
   }
   
-  if (earlierResult.skippedButtons.length > 0) {
-    logToRenderer(`[GoogleC] Skipped ${earlierResult.skippedButtons.length} Earlier buttons: ${earlierResult.skippedButtons.join(', ')}`, 'info');
+  if (expandedResult.skippedButtons.length > 0) {
+    logToRenderer(`[GoogleC] Skipped ${expandedResult.skippedButtons.length} ${sectionHeader} expansion buttons: ${expandedResult.skippedButtons.join(', ')}`, 'info');
   }
   
-  // Handle "View all" buttons - these expand condensed sections
+  // Handle "View all" buttons within this section - these expand condensed sections
   const viewAllResult = await browserView.webContents.executeJavaScript(`
     (function() {
+      const sectionHeader = ${sectionHeaderJson};
       let clickCount = 0;
       const clickedButtons = [];
       
@@ -338,7 +360,7 @@ async function expandPageContent(browserView) {
   }
   
   return { 
-    earlierClicks: earlierResult.clickCount, 
+    expandedClicks: expandedResult.clickCount, 
     viewAllClicks: viewAllResult.clickCount 
   };
 }

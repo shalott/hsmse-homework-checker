@@ -96,25 +96,7 @@ npm start
 
 ### Data Format
 
-```json
-{
-  "assigned": [
-    {
-      "name": "Assignment Name",
-      "class": "Course Name",
-      "due_date": "October 20, 2025",
-      "due_date_parsed": "2025-10-20",
-      "url": "https://...",
-      "description": "Assignment description",
-      "max_points": 100,
-      "source": "google_classroom" | "jupiter" | "nycstud"
-    }
-  ],
-  "missing": [...],
-  "completed": [...],
-  "errors": [...]
-}
-```
+Look at the ```data/all_assignments.json``` file after assignments are gathered.  
 
 ## License
 

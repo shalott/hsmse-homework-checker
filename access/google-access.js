@@ -1,203 +1,117 @@
 // Google Classroom access management
 
-const fs = require('fs');
-const path = require('path');
 const { logToRenderer } = require('core/logger');
 const {
   GOOGLE_CLASSROOM_URL_BASE,
   GOOGLE_CLASSROOM_ASSIGNMENTS_PATH
 } = require('config/constants');
+const { showNotification } = require('core/notifications');
+
 
 /**
- * Show a non-blocking authentication message in the browser window
+ * Check and ensure authentication for a Google Classroom account
  * @param {BrowserView} browserView - The Electron BrowserView instance
- * @param {string} message - The message to display
- * @returns {Promise<void>} - Resolves when user clicks OK
+ * @param {number} accountNumber - The account number (0 or 1)
+ * @returns {Promise<Object>} - { success: boolean, needsAuth: boolean, error?: string }
  */
-async function showBrowserMessage(browserView, message) {
-  if (!browserView || !browserView.webContents) {
-    logToRenderer('Browser view not available for message display', 'error');
-    return;
+async function ensureGoogleAuthentication(browserView, accountNumber) {
+  // Check for cancellation at the start
+  checkScrapingCanceled();
+  
+  const accountType = accountNumber === 0 ? 'nycstudents' : 'hsmse';
+  const url = `${GOOGLE_CLASSROOM_URL_BASE}${accountNumber}${GOOGLE_CLASSROOM_ASSIGNMENTS_PATH}`;
+  
+  logToRenderer(`[GoogleC] Checking authentication status for account /u/${accountNumber}...`, 'info');
+  await browserView.webContents.loadURL(url);
+  
+  // Check for cancellation after navigation
+  checkScrapingCanceled();
+  
+  // Get the current URL after navigation
+  let currentUrl = browserView.webContents.getURL();
+  logToRenderer(`[GoogleC] Initial URL after navigation: ${currentUrl}`, 'info');
+  
+  // Check if we were redirected to any login/SSO page FIRST (before checking for classroom)
+  const isLoginPage = currentUrl.includes('accounts.google.com') || 
+                     currentUrl.includes('signin') ||
+                     currentUrl.includes('login') ||
+                     currentUrl.includes('auth') ||
+                     currentUrl.includes('idpcloud.nycenet.edu') ||
+                     currentUrl.includes('oauth');
+  
+  // Check if we are actually on a Google Classroom URL
+  const isGoogleClassroomUrl = currentUrl.includes('classroom.google.com');
+  
+  logToRenderer(`[GoogleC] URL analysis: isLoginPage=${isLoginPage}, isGoogleClassroomUrl=${isGoogleClassroomUrl}`, 'info');
+  
+  // If we're on a login page, wait for authentication
+  if (isLoginPage) {
+    logToRenderer(`[GoogleC] Redirected to login/SSO page: ${currentUrl}`, 'warn');
+    logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
+    
+    // Wait for user to authenticate (this will check for cancellation internally)
+    await waitForAuthentication(browserView, accountType);
+    
+    // Check for cancellation after authentication wait
+    checkScrapingCanceled();
+    
+    // After authentication, verify we're now on the correct page
+    const verifyUrl = browserView.webContents.getURL();
+    const isNowOnClassroom = verifyUrl.includes('classroom.google.com') && 
+                             verifyUrl.includes(`/u/${accountNumber}/`);
+    
+    if (isNowOnClassroom) {
+      logToRenderer(`[GoogleC] Authentication verified - now on correct Google Classroom page`, 'success');
+      return { success: true, needsAuth: false };
+    } else {
+      logToRenderer(`[GoogleC] Authentication wait completed but still not on correct page: ${verifyUrl}`, 'warn');
+      return { success: false, needsAuth: true, error: 'Authentication incomplete' };
+    }
   }
-
-  try {
-    logToRenderer(`Attempting to show authentication message: ${message}`, 'info');
-    logToRenderer(`Current browser URL: ${browserView.webContents.getURL()}`, 'info');
+  
+  // If we're not on a login page but also not on classroom, something's wrong
+  if (!isGoogleClassroomUrl) {
+    logToRenderer(`[GoogleC] Redirected to unexpected URL: ${currentUrl}`, 'warn');
+    return { success: false, needsAuth: true, error: `Unexpected redirect to ${currentUrl}` };
+  }
+  
+  // Check if we were redirected to the wrong account
+  if (currentUrl.includes('classroom.google.com/u/') && !currentUrl.includes(`/u/${accountNumber}/`)) {
+    logToRenderer(`[GoogleC] Account redirect detected: trying to access /u/${accountNumber} but got ${currentUrl}`, 'warn');
+    logToRenderer(`[GoogleC] Need to switch to account /u/${accountNumber}`, 'warn');
     
-    // Check if the page is ready
-    const isReady = browserView.webContents.isLoading();
-    logToRenderer(`Browser loading state: ${isReady}`, 'info');
+    // Wait for user to switch to the correct account (this will check for cancellation internally)
+    await waitForAuthentication(browserView, accountType);
     
-    // Wait for page to be ready if it's still loading
-    if (isReady) {
-      logToRenderer('Waiting for page to finish loading...', 'info');
-      await new Promise(resolve => {
-        browserView.webContents.once('did-finish-load', resolve);
-        // Timeout after 10 seconds
-        setTimeout(resolve, 10000);
-      });
+    // Check for cancellation after authentication wait
+    checkScrapingCanceled();
+    
+    // After waiting, verify we're now on the correct page
+    const verifyUrl = browserView.webContents.getURL();
+    const isNowOnCorrectAccount = verifyUrl.includes('classroom.google.com') && 
+                                   verifyUrl.includes(`/u/${accountNumber}/`);
+    
+    if (isNowOnCorrectAccount) {
+      logToRenderer(`[GoogleC] Account switch verified - now on correct Google Classroom page`, 'success');
+      return { success: true, needsAuth: false };
+    } else {
+      logToRenderer(`[GoogleC] Account switch wait completed but still not on correct page: ${verifyUrl}`, 'warn');
+      return { success: false, needsAuth: true, error: 'Account switch incomplete' };
     }
-    
-    // Read CSS from external file
-    const { OVERLAY_NOTIFICATION_CSS_PATH } = require('../config/constants');
-    const cssContent = fs.readFileSync(OVERLAY_NOTIFICATION_CSS_PATH, 'utf8');
-    logToRenderer(`CSS file read successfully, length: ${cssContent.length}`, 'info');
-    
-    // Inject the CSS styles with animations
-    const cssWithAnimations = cssContent + `
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      @keyframes slideInScale {
-        from {
-          opacity: 0;
-          transform: translateY(-20px) scale(0.9);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-    `;
-    
-    await browserView.webContents.insertCSS(cssWithAnimations);
-    logToRenderer('CSS injected successfully', 'info');
+  }
+  
+  // Authentication check passed
+  logToRenderer(`[GoogleC] Authentication verified - already on correct Google Classroom page`, 'success');
+  return { success: true, needsAuth: false };
+}
 
-    // Then inject the message overlay into the browser window (non-blocking)
-    await browserView.webContents.executeJavaScript(`
-      (function() {
-        try {
-          console.log('Starting to create authentication overlay');
-          
-          // Check if document and body exist
-          if (!document || !document.body) {
-            throw new Error('Document or body not available');
-          }
-          
-          // Remove any existing message overlay
-          const existingOverlay = document.getElementById('notification-overlay');
-          if (existingOverlay) {
-            existingOverlay.remove();
-            console.log('Removed existing overlay');
-          }
-          
-          // Create notification overlay using new unified styling
-          const overlay = document.createElement('div');
-          overlay.id = 'notification-overlay';
-          overlay.style.cssText = \`
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            animation: fadeIn 0.3s ease-out;
-          \`;
-          
-          const notificationBox = document.createElement('div');
-          notificationBox.className = 'notification-box auth';
-          notificationBox.style.cssText = \`
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            max-width: 450px;
-            text-align: center;
-            border-top: 4px solid #ff9500;
-            animation: slideInScale 0.4s ease-out;
-          \`;
-          
-          const icon = document.createElement('div');
-          icon.className = 'notification-icon';
-          icon.style.cssText = \`
-            font-size: 48px;
-            margin-bottom: 16px;
-            line-height: 1;
-            color: #ff9500;
-          \`;
-          icon.textContent = '🔐';
-          
-          const header = document.createElement('div');
-          header.className = 'notification-header';
-          header.style.cssText = \`
-            font-size: 28px;
-            font-weight: 700;
-            color: #1d1d1f;
-            margin: 0 0 12px 0;
-            line-height: 1.2;
-          \`;
-          header.textContent = 'Authentication Required';
-          
-          const messageText = document.createElement('div');
-          messageText.className = 'notification-message';
-          messageText.style.cssText = \`
-            font-size: 18px;
-            color: #424245;
-            margin: 0 0 24px 0;
-            line-height: 1.4;
-            font-weight: 400;
-          \`;
-          messageText.textContent = '${message.replace(/'/g, "\\'")}';
-          
-          const okButton = document.createElement('button');
-          okButton.id = 'auth-ok-button';
-          okButton.className = 'notification-button';
-          okButton.style.cssText = \`
-            background: #007aff;
-            color: white;
-            border: none;
-            padding: 14px 28px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: background-color 0.2s ease;
-            min-width: 100px;
-          \`;
-          okButton.textContent = 'OK';
-          
-          notificationBox.appendChild(icon);
-          notificationBox.appendChild(header);
-          notificationBox.appendChild(messageText);
-          notificationBox.appendChild(okButton);
-          overlay.appendChild(notificationBox);
-          document.body.appendChild(overlay);
-          
-          console.log('Authentication overlay created and added to DOM');
-          
-          // Handle OK button click to dismiss the overlay
-          okButton.addEventListener('click', () => {
-            console.log('OK button clicked, removing overlay');
-            overlay.remove();
-          });
-          
-        } catch (error) {
-          console.error('Error in overlay creation:', error);
-          throw error;
-        }
-      })();
-    `);
-    
-    logToRenderer('Authentication overlay created successfully', 'success');
-    
-  } catch (error) {
-    logToRenderer(`Error showing browser message: ${error.message}`, 'error');
-    logToRenderer(`Error stack: ${error.stack}`, 'error');
-    
-    // Fallback: try to show a simple alert
-    try {
-      logToRenderer('Attempting fallback alert...', 'warn');
-      await browserView.webContents.executeJavaScript(`alert('${message}');`);
-    } catch (fallbackError) {
-      logToRenderer(`Fallback alert also failed: ${fallbackError.message}`, 'error');
-    }
+/**
+ * Check if scraping has been canceled
+ */
+function checkScrapingCanceled() {
+  if (global.isScrapingCanceled && global.isScrapingCanceled()) {
+    logToRenderer('Authentication canceled by user', 'info');
+    throw new Error('Scraping canceled by user');
   }
 }
 
@@ -212,36 +126,59 @@ async function waitForAuthentication(browserView, accountType) {
   if (accountType === 'nycstudents') {
     message = `Please log in with your ${accountType} Google account. Scraping will start once you're logged in.`;
   } else {
-    message = `Please switch to your ${accountType} Google account using the account menu (click your profile picture). Scraping will start once you're logged in to the correct account.`;
+    message = `Please add your ${accountType} Google account using the account menu (click the circle with your initial or profile picture in the upper right corner). Scraping will start once you're logged in to the correct account.`;
   }
   
   logToRenderer(`Waiting for ${accountType} authentication...`, 'info');
   
-  // Show the initial message (non-blocking)
-  await showBrowserMessage(browserView, message);
+  // Check for cancellation before showing message
+  checkScrapingCanceled();
+  
+  // Show the initial message (blocks entire app)
+  logToRenderer(`Attempting to show authentication message: ${message}`, 'info');
+  await showNotification(
+    'auth',
+    'Authentication Required',
+    message,
+    '🔐'
+  );
+  logToRenderer('Authentication overlay dismissed', 'info');
+  
+  // Check for cancellation after message is dismissed
+  checkScrapingCanceled();
   
   // Now wait and check periodically for authentication
-  let consecutiveSuccessChecks = 0;
-  const requiredSuccessChecks = 2; // Need 2 consecutive successful checks
+  let lastUrl = '';
   
   while (true) {
+    // Check for cancellation at the start of each loop iteration
+    checkScrapingCanceled();
+    
     // Wait a bit before checking
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds
+    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds
+    
+    // Check for cancellation after waiting
+    checkScrapingCanceled();
     
     const currentUrl = browserView.webContents.getURL();
-    logToRenderer(`Checking authentication status. Current URL: ${currentUrl}`, 'info');
+    
+    // Only log if URL changed to reduce noise
+    if (currentUrl !== lastUrl) {
+      logToRenderer(`Checking authentication status. Current URL: ${currentUrl}`, 'info');
+      lastUrl = currentUrl;
+    }
     
     // Check if we're still on a login page or in the middle of authentication
     const isOnLoginPage = currentUrl.includes('accounts.google.com') || 
                          currentUrl.includes('signin') || 
                          currentUrl.includes('login') ||
                          currentUrl.includes('auth') ||
-                         currentUrl.includes('oauth');
+                         currentUrl.includes('oauth') ||
+                         currentUrl.includes('idpcloud.nycenet.edu');
     
     if (isOnLoginPage) {
-      logToRenderer('Still on login/authentication page, continuing to wait...', 'info');
-      consecutiveSuccessChecks = 0; // Reset counter
-      continue; // Keep waiting
+      // Still on login page - continue waiting
+      continue;
     }
     
     // Check if we're on the correct Google Classroom page for this account
@@ -250,19 +187,12 @@ async function waitForAuthentication(browserView, accountType) {
                                      (accountType === 'hsmse' && currentUrl.includes('/u/1')));
     
     if (isOnCorrectClassroomPage) {
-      consecutiveSuccessChecks++;
-      logToRenderer(`Authentication check ${consecutiveSuccessChecks}/${requiredSuccessChecks} successful - on correct ${accountType} Google Classroom page`, 'info');
-      
-      if (consecutiveSuccessChecks >= requiredSuccessChecks) {
-        logToRenderer(`${accountType} authentication completed successfully - now on correct Google Classroom page`, 'success');
-        break;
-      }
-    } else {
-      // Not on the correct classroom page - keep waiting
-      logToRenderer(`On page: ${currentUrl}`, 'info');
-      logToRenderer(`This is NOT the correct ${accountType} Google Classroom page, continuing to wait...`, 'info');
-      consecutiveSuccessChecks = 0; // Reset counter
+      logToRenderer(`${accountType} authentication completed successfully - now on correct Google Classroom page`, 'success');
+      break;
     }
+    
+    // Not on the correct classroom page - keep waiting
+    logToRenderer(`Waiting for ${accountType} account authentication...`, 'info');
   }
 }
 
@@ -319,5 +249,5 @@ async function checkGoogleAccess(browserView) {
 module.exports = {
   checkGoogleAccess,
   waitForAuthentication,
-  showBrowserMessage
+  ensureGoogleAuthentication
 };

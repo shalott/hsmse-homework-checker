@@ -40,7 +40,7 @@ async function triggerCsvDownloadViaKeyboard(browserView) {
   logToRenderer('Triggering TSV download via keyboard...', 'info');
     
   // Give the page a moment to be ready
-  await delay(200);
+  await delay(30);
   
   // Strategy 2: Ctrl + Alt + F to open File menu
   logToRenderer('Opening File menu with Ctrl+Alt+F', 'info');

@@ -37,6 +37,9 @@ const autoStartup = require('core/auto-startup');
 // Import app menu
 const { createApplicationMenu } = require('windows/app-menu');
 
+// Import unified notification system
+const { showNotification } = require('core/notifications');
+
 // Initialize backup system
 const backupSystem = new AssignmentBackup();
 
@@ -297,7 +300,7 @@ async function alertUserToUpdateFailure(errorDetails = '') {
 
 // Alert user about successful assignment update
 async function alertUserToUpdateSuccess(totalAssignments, breakdown) {
-  await showOverlayNotification(
+  await showNotification(
     'success',
     'Success!',
     'Assignments successfully updated.',
@@ -316,178 +319,6 @@ function checkScrapingCanceled() {
 // Make cancellation flag accessible to scrapers
 global.isScrapingCanceled = () => isScrapingCanceled;
 
-// Show unified overlay notification
-async function showOverlayNotification(type, header, message, icon = '🎉') {
-  return new Promise((resolve) => {
-    // Read CSS from external file
-    const fs = require('fs');
-    const cssContent = fs.readFileSync(OVERLAY_NOTIFICATION_CSS_PATH, 'utf8');
-    
-    // Add animations to CSS
-    const cssWithAnimations = cssContent + `
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-      
-      @keyframes slideInScale {
-        from {
-          opacity: 0;
-          transform: translateY(-20px) scale(0.9);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-    `;
-    
-    // Inject CSS into main window
-    mainWindow.webContents.insertCSS(cssWithAnimations).then(() => {
-      // Create and show the notification overlay
-      mainWindow.webContents.executeJavaScript(`
-        (function() {
-          try {
-            // Remove any existing notification overlay
-            const existingOverlay = document.getElementById('notification-overlay');
-            if (existingOverlay) {
-              existingOverlay.remove();
-            }
-            
-            // Create notification overlay
-            const overlay = document.createElement('div');
-            overlay.id = 'notification-overlay';
-            overlay.style.cssText = \`
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              background: rgba(0, 0, 0, 0.7);
-              z-index: 9999;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              animation: fadeIn 0.3s ease-out;
-            \`;
-            
-            const notificationBox = document.createElement('div');
-            notificationBox.className = 'notification-box ${type}';
-            notificationBox.style.cssText = \`
-              background: white;
-              padding: 40px;
-              border-radius: 16px;
-              box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-              max-width: 450px;
-              text-align: center;
-              animation: slideInScale 0.4s ease-out;
-            \`;
-            
-            const iconEl = document.createElement('div');
-            iconEl.className = 'notification-icon';
-            iconEl.style.cssText = \`
-              font-size: 48px;
-              margin-bottom: 16px;
-              line-height: 1;
-            \`;
-            iconEl.textContent = '${icon}';
-            
-            const headerEl = document.createElement('div');
-            headerEl.className = 'notification-header';
-            headerEl.style.cssText = \`
-              font-size: 28px;
-              font-weight: 700;
-              color: #1d1d1f;
-              margin: 0 0 12px 0;
-              line-height: 1.2;
-            \`;
-            headerEl.textContent = '${header}';
-            
-            const messageEl = document.createElement('div');
-            messageEl.className = 'notification-message';
-            messageEl.style.cssText = \`
-              font-size: 18px;
-              color: #424245;
-              margin: 0 0 24px 0;
-              line-height: 1.4;
-              font-weight: 400;
-            \`;
-            messageEl.textContent = '${message}';
-            
-            const okButton = document.createElement('button');
-            okButton.className = 'notification-button';
-            okButton.style.cssText = \`
-              background: #007aff;
-              color: white;
-              border: none;
-              padding: 14px 28px;
-              border-radius: 8px;
-              cursor: pointer;
-              font-size: 16px;
-              font-weight: 600;
-              transition: background-color 0.2s ease;
-              min-width: 100px;
-            \`;
-            okButton.textContent = 'OK';
-            
-            // Add hover effect
-            okButton.addEventListener('mouseenter', () => {
-              okButton.style.background = '#0056b3';
-            });
-            okButton.addEventListener('mouseleave', () => {
-              okButton.style.background = '#007aff';
-            });
-            
-            // Handle keyboard events to dismiss overlay
-            const handleKeyDown = (event) => {
-              if (event.key === 'Enter' || event.key === 'Escape' || event.key === ' ') {
-                event.preventDefault();
-                event.stopPropagation();
-                overlay.remove();
-                document.removeEventListener('keydown', handleKeyDown);
-                resolve();
-              }
-            };
-            
-            // Cleanup function to remove event listener
-            const cleanup = () => {
-              document.removeEventListener('keydown', handleKeyDown);
-            };
-            
-            // Handle OK button click
-            okButton.addEventListener('click', () => {
-              cleanup();
-              overlay.remove();
-              resolve();
-            });
-            
-            // Add keyboard event listener
-            document.addEventListener('keydown', handleKeyDown);
-            
-            // Focus the OK button to prevent the Update Assignments button from being triggered
-            okButton.focus();
-            
-            // Assemble the overlay
-            notificationBox.appendChild(iconEl);
-            notificationBox.appendChild(headerEl);
-            notificationBox.appendChild(messageEl);
-            notificationBox.appendChild(okButton);
-            overlay.appendChild(notificationBox);
-            document.body.appendChild(overlay);
-            
-          } catch (error) {
-            console.error('Error creating notification overlay:', error);
-            resolve();
-          }
-        })()
-      `);
-    }).catch(error => {
-      console.error('Error injecting CSS:', error);
-      resolve();
-    });
-  });
-}
 
 // Timeout wrapper for scraping operations
 async function withTimeout(promise, timeoutMs, operationName) {
@@ -677,9 +508,10 @@ function createLogsWindow() {
 
 // No need for multiple browser views - we'll use the single browserView sequentially
 
-// Complete workflow: Google Classroom /u/0 direct load + scrape
-async function runGoogleWorkflow0() {
-  logToRenderer('Starting Google Classroom /u/0 workflow...', 'info');
+// Complete workflow: Google Classroom direct load + scrape
+// @param {number} accountNumber - The account number (0 or 1)
+async function runGoogleWorkflow(accountNumber) {
+  logToRenderer(`Starting Google Classroom /u/${accountNumber} workflow...`, 'info');
   
   try {
     // Check for cancellation before starting
@@ -691,58 +523,26 @@ async function runGoogleWorkflow0() {
     // Check for cancellation after creating browser view
     checkScrapingCanceled();
     
-    // Try to scrape assignments from /u/0 directly
-    logToRenderer('Loading /u/0 and attempting to scrape assignments...', 'info');
-    const scrapingResult = await scrapeGoogleClassroomAssignments(browserView, 0);
+    // FIRST: Ensure authentication before attempting to scrape
+    const { ensureGoogleAuthentication } = require('access/google-access');
+    const authResult = await ensureGoogleAuthentication(browserView, accountNumber);
     
-    // Check if scraping failed due to authentication issues
-    if (!scrapingResult.success && scrapingResult.needsAuth) {
-      logToRenderer('Authentication required for /u/0. Please log in to your Google Classroom accounts.', 'instruction');
-      return { success: false, error: 'Authentication required', needsAuth: true, assignments: [] };
+    if (!authResult.success) {
+      logToRenderer(`Authentication failed for /u/${accountNumber}`, 'error');
+      return { success: false, error: authResult.error || 'Authentication failed', needsAuth: true, assignments: [] };
     }
     
-    logToRenderer(`Google /u/0 workflow completed: ${scrapingResult.success ? 'Success' : 'Failed'}`, 
+    // Authentication confirmed - proceed with scraping
+    logToRenderer(`Authentication confirmed for /u/${accountNumber} - proceeding with scraping...`, 'info');
+    const scrapingResult = await scrapeGoogleClassroomAssignments(browserView, accountNumber);
+    
+    logToRenderer(`Google /u/${accountNumber} workflow completed: ${scrapingResult.success ? 'Success' : 'Failed'}`, 
                   scrapingResult.success ? 'success' : 'error');
     
     return scrapingResult;
     
   } catch (error) {
-    logToRenderer(`Google /u/0 workflow error: ${error.message}`, 'error');
-    return { success: false, error: error.message, assignments: [] };
-  }
-}
-
-// Complete workflow: Google Classroom /u/1 direct load + scrape
-async function runGoogleWorkflow1() {
-  logToRenderer('Starting Google Classroom /u/1 workflow...', 'info');
-  
-  try {
-    // Check for cancellation before starting
-    checkScrapingCanceled();
-    
-    // Ensure we have a browser view
-    createBrowserView();
-    
-    // Check for cancellation after creating browser view
-    checkScrapingCanceled();
-    
-    // Try to scrape assignments from /u/1 directly
-    logToRenderer('Loading /u/1 and attempting to scrape assignments...', 'info');
-    const scrapingResult = await scrapeGoogleClassroomAssignments(browserView, 1);
-    
-    // Check if scraping failed due to authentication issues
-    if (!scrapingResult.success && scrapingResult.needsAuth) {
-      logToRenderer('Authentication required for /u/1. Please log in to your Google Classroom accounts.', 'instruction');
-      return { success: false, error: 'Authentication required', needsAuth: true, assignments: [] };
-    }
-    
-    logToRenderer(`Google /u/1 workflow completed: ${scrapingResult.success ? 'Success' : 'Failed'}`, 
-                  scrapingResult.success ? 'success' : 'error');
-    
-    return scrapingResult;
-    
-  } catch (error) {
-    logToRenderer(`Google /u/1 workflow error: ${error.message}`, 'error');
+    logToRenderer(`Google /u/${accountNumber} workflow error: ${error.message}`, 'error');
     return { success: false, error: error.message, assignments: [] };
   }
 }
@@ -1181,34 +981,12 @@ async function runScrapingProcess() {
       }
       
       logToRenderer('Running Google /u/0 workflow...', 'info');
-      google0Result = await runGoogleWorkflow0();
+      google0Result = await runGoogleWorkflow(0);
       results.push({ type: 'google0', result: google0Result });
     } else {
       logToRenderer('Skipping Google /u/0 workflow (disabled in settings)', 'info');
       google0Result = { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' };
       results.push({ type: 'google0', result: google0Result });
-    }
-    
-    // Check for authentication failure in /u/0 (only if workflow was executed)
-    if (appSettings.scrape_nyc_students_google && google0Result.needsAuth) {
-      logToRenderer('Google /u/0 authentication failed - waiting for user to authenticate', 'warn');
-      const { waitForAuthentication } = require('access/google-access');
-      await waitForAuthentication(browserView, 'nycstudents');
-      
-      // Retry /u/0 scraping after authentication
-      logToRenderer('Retrying Google /u/0 scraping after authentication...', 'info');
-      const retryGoogle0Result = await runGoogleWorkflow0();
-      
-      // Replace the failed result with the successful retry result
-      const google0Index = results.findIndex(r => r.type === 'google0');
-      if (google0Index !== -1) {
-        results[google0Index] = { type: 'google0', result: retryGoogle0Result };
-      } else {
-        results.push({ type: 'google0', result: retryGoogle0Result });
-      }
-      
-      // Update the local variable as well
-      google0Result = retryGoogle0Result;
     }
     
     // Run Google /u/1 workflow (if enabled)
@@ -1220,30 +998,8 @@ async function runScrapingProcess() {
       }
       
       logToRenderer('Running Google /u/1 workflow...', 'info');
-      google1Result = await runGoogleWorkflow1();
+      google1Result = await runGoogleWorkflow(1);
       results.push({ type: 'google1', result: google1Result });
-      
-      // Check for authentication failure in /u/1
-      if (google1Result.needsAuth) {
-        logToRenderer('Google /u/1 authentication failed - waiting for user to authenticate', 'warn');
-        const { waitForAuthentication } = require('access/google-access');
-        await waitForAuthentication(browserView, 'hsmse');
-        
-        // Retry /u/1 scraping after authentication
-        logToRenderer('Retrying Google /u/1 scraping after authentication...', 'info');
-        const retryGoogle1Result = await runGoogleWorkflow1();
-        
-        // Replace the failed result with the successful retry result
-        const google1Index = results.findIndex(r => r.type === 'google1');
-        if (google1Index !== -1) {
-          results[google1Index] = { type: 'google1', result: retryGoogle1Result };
-        } else {
-          results.push({ type: 'google1', result: retryGoogle1Result });
-        }
-        
-        // Update the local variable as well
-        google1Result = retryGoogle1Result;
-      }
     } else {
       logToRenderer('Skipping Google /u/1 workflow (disabled in settings)', 'info');
       google1Result = { success: true, assignments: [], skipped: true, reason: 'Disabled in settings' };
@@ -1366,7 +1122,7 @@ ipcMain.handle('cancel-scraping', async () => {
 });
 
 ipcMain.handle('show-cancel-confirmation', async () => {
-  await showOverlayNotification(
+  await showNotification(
     'info',
     'Update Canceled',
     'The assignment update has been canceled successfully.',
@@ -1808,11 +1564,11 @@ ipcMain.handle('scrape-assignments-only', async () => {
     const sequentialResults = [];
     
     // Run Google /u/0 workflow
-    const seqGoogle0Result = await runGoogleWorkflow0();
+    const seqGoogle0Result = await runGoogleWorkflow(0);
     sequentialResults.push({ type: 'google0', result: seqGoogle0Result });
     
     // Run Google /u/1 workflow  
-    const seqGoogle1Result = await runGoogleWorkflow1();
+    const seqGoogle1Result = await runGoogleWorkflow(1);
     sequentialResults.push({ type: 'google1', result: seqGoogle1Result });
     
     // Run Jupiter workflow

@@ -30,7 +30,8 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
     // Get URLs for the specified account
     const urls = getGoogleClassroomUrls(accountNumber);
     
-    // Scrape from each tab type
+    // Authentication should already be verified before this function is called
+    // Proceed directly with scraping all tabs
     const tabs = [
       { url: urls.ASSIGNED_URL, isMissing: false, label: 'assigned' },
       { url: urls.MISSING_URL, isMissing: true, label: 'missing' },
@@ -55,34 +56,18 @@ async function scrapeGoogleClassroomAssignments(browserView, accountNumber = 0) 
       const currentUrl = browserView.webContents.getURL();
       logToRenderer(`[GoogleC] Current URL after navigation: ${currentUrl}`, 'info');
       
-      // Check if we are actually on a Google Classroom URL
-      const isGoogleClassroomUrl = currentUrl.includes('classroom.google.com');
-      
-      // Check if we were redirected to any login/SSO page
-      const isLoginPage = currentUrl.includes('accounts.google.com') || 
-                         currentUrl.includes('signin') ||
-                         currentUrl.includes('login') ||
-                         currentUrl.includes('auth') ||
-                         currentUrl.includes('idpcloud.nycenet.edu') ||
-                         currentUrl.includes('oauth');
-      
-      // NEVER attempt to scrape unless we're on a Google Classroom URL
-      if (!isGoogleClassroomUrl) {
-        if (isLoginPage) {
-          logToRenderer(`[GoogleC] Redirected to login/SSO page: ${currentUrl}`, 'warn');
-          logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
-          return { success: false, needsAuth: true, error: 'Authentication required - redirected to login page', assignments: [] };
-        } else {
-          logToRenderer(`[GoogleC] Redirected to unexpected URL: ${currentUrl}`, 'warn');
-          logToRenderer(`[GoogleC] Authentication required for account /u/${accountNumber}`, 'warn');
-          return { success: false, needsAuth: true, error: `Unexpected redirect to ${currentUrl}`, assignments: [] };
-        }
+      // Verify we're still on Google Classroom (should be, but double-check)
+      if (!currentUrl.includes('classroom.google.com')) {
+        logToRenderer(`[GoogleC] Unexpected redirect during scraping: ${currentUrl}`, 'warn');
+        // Continue to next tab rather than failing completely
+        continue;
       }
       
-      // Check if we were redirected to the wrong account (e.g., trying to access /u/1 but got /u/0)
+      // Verify we're still on the correct account
       if (currentUrl.includes('classroom.google.com/u/') && !currentUrl.includes(`/u/${accountNumber}/`)) {
-        logToRenderer(`[GoogleC] Account redirect detected: trying to access /u/${accountNumber} but got ${currentUrl}`, 'warn');
-        return { success: false, needsAuth: true, error: 'Wrong account - need to switch accounts', assignments: [] };
+        logToRenderer(`[GoogleC] Account changed during scraping: ${currentUrl}`, 'warn');
+        // Continue to next tab rather than failing completely
+        continue;
       }
       
       // Step 3: Extract assignment counts for validation

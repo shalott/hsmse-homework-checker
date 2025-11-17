@@ -62,6 +62,19 @@ async function ensureGoogleAuthentication(browserView, accountNumber) {
     
     if (isNowOnClassroom) {
       logToRenderer(`[GoogleC] Authentication verified - now on correct Google Classroom page`, 'success');
+      
+      // Ensure we're on the exact assigned URL before returning (same as initial auth check)
+      const assignedUrl = `${GOOGLE_CLASSROOM_URL_BASE}${accountNumber}${GOOGLE_CLASSROOM_ASSIGNMENTS_PATH}`;
+      const currentUrl = browserView.webContents.getURL();
+      
+      // Only navigate if we're not already on the assigned URL
+      if (!currentUrl.includes('/a/not-turned-in/all')) {
+        logToRenderer(`[GoogleC] Navigating to assigned URL for account /u/${accountNumber}...`, 'info');
+        await browserView.webContents.loadURL(assignedUrl);
+        // Wait a moment for navigation to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       return { success: true, needsAuth: false };
     } else {
       logToRenderer(`[GoogleC] Authentication wait completed but still not on correct page: ${verifyUrl}`, 'warn');
@@ -93,6 +106,19 @@ async function ensureGoogleAuthentication(browserView, accountNumber) {
     
     if (isNowOnCorrectAccount) {
       logToRenderer(`[GoogleC] Account switch verified - now on correct Google Classroom page`, 'success');
+      
+      // Ensure we're on the exact assigned URL before returning (same as initial auth check)
+      const assignedUrl = `${GOOGLE_CLASSROOM_URL_BASE}${accountNumber}${GOOGLE_CLASSROOM_ASSIGNMENTS_PATH}`;
+      const currentUrl = browserView.webContents.getURL();
+      
+      // Only navigate if we're not already on the assigned URL
+      if (!currentUrl.includes('/a/not-turned-in/all')) {
+        logToRenderer(`[GoogleC] Navigating to assigned URL for account /u/${accountNumber}...`, 'info');
+        await browserView.webContents.loadURL(assignedUrl);
+        // Wait a moment for navigation to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
       return { success: true, needsAuth: false };
     } else {
       logToRenderer(`[GoogleC] Account switch wait completed but still not on correct page: ${verifyUrl}`, 'warn');

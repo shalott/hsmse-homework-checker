@@ -249,6 +249,9 @@ async function initializeApp() {
   }
 }
 
+// Set remote debugging port to 19090 to avoid conflicts with default 9090
+app.commandLine.appendSwitch('remote-debugging-port', '19090');
+
 // This method will be called when Electron has finished initialization
 app.whenReady().then(() => {
   initializeApp();
